@@ -1,0 +1,177 @@
+---
+title: "Combine and clean the HTSeq-count result files"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+# Usage introduction
+
+After the HTSeq-count step in the Terra wdl workflow, it is preferred to download all the HTSeq-count abundance files into a single directory on your personal small computer. It is easy to use `gsutil ls` or `gsutil cp`  `/wildcard/wildcard.htseq_count.txt` to transfer files in batch.
+
+Then, the HTSeq-count result text files are usually aggregated in R, in other words, combined into a gene expression matrix across samples.
+
+Then, the expression matrix is cleaned. Ensembl gene ids are converted into hgnc symbols based on a custom conversion table that are made from the Ensembl gtf annotation file.
+
+## Environment setup.
+
+```{r environment-setup}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("magrittr")
+```
+
+## Set up input/out files, directories, and parameters
+Ideally, the user only needs to modify this chunk to run their own data set.
+
+```{r inputs}
+# the HTSeq-count result text files are aggregated in R by a function provided in this script,
+source("./utility_scripts/summarize_expression.R")
+
+# All the downloaded HTSeq-count result text files should be put under this directory.
+htseq_count_result_directory <- file.path(getwd(), "htseq_count_results")
+
+# the function summarize_expression will handle "HTSeq" result, rather than "StringTie" result, at this time.
+current_format <- "HTSeq"
+
+# Specify the path to the compressed file of ensembl gene id and hgnc symbol conversion table.
+compression_file_path <- file.path(getwd(),
+                                   "intermediate_files",
+                                   "ensemble_hgnc_conversion_table_from_gtf.tar.gz")
+```
+
+
+```{r outputs}
+# Set up output related names
+output_base_name <- "htseq_count_expression_matrix"
+
+# We can compress the output text file into a tar.gz file to save hard disk space.
+output_csv_file_name <- paste(output_base_name, "csv", sep = ".")
+output_compressed_file_name <- paste(output_base_name, "tar.gz", sep = ".")
+
+# For now we only output the compressed matrix file to save disk space.
+path_to_output_compressed_file <- file.path(getwd(), "intermediate_files", output_compressed_file_name)
+```
+
+## Merge gene expression values per sample per file into a gene expression matrix.
+
+Specifically, run `summarize_expression(files = list_of_files, samples = list_of_samples, format = “HTSeq”)`
+
+```{r merge-into-expression-matrix}
+
+# Create a character vector of full paths to the HTSeq-count result files
+paths_to_htseq_count_files <- list.files(htseq_count_result_directory, full.names = T)
+    
+
+# Create a character vector of the sample names corresponding to the file names.
+# Usually extract information from the HTSeq-count result file names.
+sample_names <- list.files(htseq_count_result_directory) %>%
+    sapply(., function(x) strsplit(x, "\\.")[[1]][1]) %>%
+    unname
+
+# Call the summarize_expression function to get a data frame of the gene expression matrix across samples.
+raw_expression_dataframe <- paths_to_htseq_count_files %>%
+    summarize_expression(files = ., samples = sample_names, format = current_format)
+
+# Do some cleaning work to make the downstream process is easier.
+cleaned_expression_dataframe <- raw_expression_dataframe %>%
+    .[-(1:5), ] %>%
+    set_colnames(., c("ensembl_gene_id", colnames(.)[-1])) %>%
+    set_rownames(., NULL)
+
+
+# The first column is the ensembl_gene_id, so we calcuate the median of each row for the rest columns.
+# Later on, the duplicated hgnc symbols will be selected based on the expression median values.
+cleaned_expression_dataframe$expression_median <- apply(cleaned_expression_dataframe[, -1], 1, median)
+
+head(cleaned_expression_dataframe)
+```
+
+## Load the Ensembl gene id and hgnc symbol conversion table.
+The conversion table is a custom table made by extracting information from Ensembl gtf annotation file. This chuck of code about decompression can be used in other script.
+
+### Why use a custom conversion table instead of biomaRt library?
+
+Using [biomaRt library](https://www.bioconductor.org/packages/devel/bioc/vignettes/biomaRt/inst/doc/biomaRt.html):
+
+1. One ensembl gene id can match several hgnc gene symbols, due to the mistake of Biomart database query. If we extract ensembl gene id and hgnc gene symbol from the GTF file, those mistake can be avoided.
+
+2. The Internet connection to biomaRt server at [emsembl.org](https://uswest.ensembl.org/index.html) is slow and unstable.
+
+```{r load-conversion-table}
+# Get the only text file name in the compressed file.
+raw_file_name <- untar(tarfile =compression_file_path, list=TRUE)[1]
+
+# decompress the compressed file.
+return_code <- untar(tarfile = compression_file_path, tar = "tar")
+if (return_code != 0) {
+    stop("decompression is unsuccessful!")
+}
+
+# Read the decompressed file into a R data frame
+decompressed_dataframe <- read.delim(raw_file_name, header = T)
+
+# Delete the decompressed file
+unlink(raw_file_name)
+```
+
+## Map the ensembl gene ids to hgnc symbols.
+
+```{r merge-expression-matrix-dataframe-and-conversion-table}
+conversion_dataframe <- decompressed_dataframe
+
+(length(conversion_dataframe$hgnc_symbol) - length(unique(conversion_dataframe$hgnc_symbol))) %>%
+cat("The number of duplicated hgnc symbols in the conversion table is: ", ., sep = "", "\n")
+
+# left join the expression matrix and conversion table.
+merged_expression_dataframe <- merge(cleaned_expression_dataframe,
+                                     conversion_dataframe,
+                                     by = "ensembl_gene_id",
+                                     all.x=T)
+```
+
+## Remove duplicated hgnc symbols.
+
+The mutiple hgnc gene symbols can match one ensembl gene id, so median calculation is still necessary.
+For two duplicated hgnc symbols, the symbols with larger expression median values among samples are retained, whereas the symbols with lower median values are discarded. Then, other three useless columns are discarded.
+
+```{r remove-duplicated-hgnc-symbols}
+final_expression_dataframe <- merged_expression_dataframe %>%
+    by(., .$hgnc_symbol, function(df_x) df_x[which.max(df_x$expression_median), ]) %>%
+    do.call(rbind, .) %>%
+    inset(c("ensembl_gene_id", "expression_median", "hgnc_symbol"), value = c(NULL, NULL, NULL))
+
+head(final_expression_dataframe)
+```
+
+## Write combined expression matrix to the hard disk.
+
+```{r output}
+write.csv(final_expression_dataframe,
+          file = output_csv_file_name,
+          quote = F,
+          row.names = T)
+
+# Compress the output file.
+tar(tarfile = output_compressed_file_name, files = output_csv_file_name,
+    compression = "gzip", compression_level = 9, tar = "tar")
+```
+
+# Move the expression matrix to a proper folder.
+
+```{r output-relocation}
+# relocate the compressed file.
+file.rename(from = output_compressed_file_name, to = path_to_output_compressed_file)
+
+# Delete the original file.
+unlink(output_csv_file_name)
+
+proc.time() - ptm
+```
+

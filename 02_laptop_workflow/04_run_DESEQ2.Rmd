@@ -1,0 +1,79 @@
+---
+title: "Analyzing RNA-seq data with DESeq2"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+# Introduction
+
+[DESeq2 official tutorial](https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
+
+[DESeq2 result explanation](https://chipster.csc.fi/manual/deseq2.html)
+
+[The Wald test is a standard way to extract a P value from a regression fit](https://www.biostars.org/p/308142/)
+
+Two batches can be the multi-factor designs besides the treated vs untreated.
+Two batches should be seeing no difference in expression
+
+
+```{r}
+
+```
+
+
+```{r initial-settings, message = F, warning = F}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("magrittr")
+```
+
+# Install DESeq2 related packages
+
+```{r message = F, warning = F}
+
+```
+
+# Codes for analysis
+
+```{r}
+library("tximport")
+library("readr")
+library("tximportData")
+dir <- system.file("extdata", package="tximportData")
+dir
+
+samples <- read.table(file.path(dir,"samples.txt"), header=TRUE)
+samples
+
+
+samples$condition <- factor(rep(c("A","B"),each=3))
+samples$condition
+
+rownames(samples) <- samples$run
+rownames(samples)
+
+
+samples[,c("pop","center","run","condition")]
+```
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+
+```{r}
+proc.time() - ptm
+```
+

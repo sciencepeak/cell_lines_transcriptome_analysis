@@ -1,0 +1,246 @@
+---
+title: "Gene Set Variation Analysis (GSVA) and Molecular Signatures Database (MSigDB)"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+# Introduction
+
+> Gene Set Variation Analysis (*GSVA*) is a non-parametric, unsupervised method for estimating variation of gene set enrichment through the samples of a expression data set.
+>
+> GSVA performs a change in coordinate systems, transforming the data from a gene by sample matrix to a gene-set by sample matrix, thereby allowing the evaluation of pathway enrichment for each sample. This new matrix of GSVA enrichment scores facilitates applying standard analytical methods like functional enrichment, survival analysis, clustering, CNV-pathway analysis or cross-tissue pathway analysis, in a pathway-centric manner.
+
+```{r initial-settings, message = F, warning = F}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+
+# BiocManager::install("GSVA")
+# BiocManager::install("GSVAdata")
+# BiocManager::install("edgeR")
+library("magrittr")
+library("stringr")
+library("tidyr")
+library("GSVA")
+library("GSVAdata")
+library("edgeR")
+```
+
+# Gene sets in Molecular Signatures Database (MSigDB)
+
+## What is the format of the downloaded gene sets?
+
+The gene set files are in format of `GMT` (Gene Matrix Transposed file format). The `*.gmt` file format is defined at [GSEA webpage](https://software.broadinstitute.org/cancer/software/gsea/wiki/index.php/Data_formats#GMT:_Gene_Matrix_Transposed_file_format_.28.2A.gmt.29)
+
+## Where to download the gene sets?
+
+Download GMT Files at [MSigDB Collections](https://www.gsea-msigdb.org/gsea/msigdb/collections.jsp)
+
+Download the GMT files using **gene symbols**, not the **NCBI (entrez) gene ids**
+
+## Which gene sets need to be downloaded in this study?
+
+Click on the link of the gene sets below to download the current version of gene sets, or go to [MSigDB Collections](https://www.gsea-msigdb.org/gsea/msigdb/collections.jsp) to find the latest version of gene sets.
+
+* [H: hallmark gene sets](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.0/h.all.v7.0.symbols.gmt)
+
+* [CGP: chemical and genetic perturbations](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.0/c2.cgp.v7.0.symbols.gmt)
+
+    + We only need the gene set CGP within the gene set C2: curated gene sets.
+
+* [C6: oncogenic signatures](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.0/c6.all.v7.0.symbols.gmt)
+
+* [C7: immunologic signatures](https://www.gsea-msigdb.org/gsea/msigdb/download_file.jsp?filePath=/msigdb/release/7.0/c7.all.v7.0.symbols.gmt)
+
+    + This data set is only useful for immune cell samples.
+
+    + So for our transferred 24 samples, they are cell lines, so they don't need C7.
+
+    + For the our download samples, they are patient biopsy containing immune cells, so they need C7.
+
+***
+
+# Inputs and outputs folders
+
+```{r}
+# Inputs
+compression_file_path <- file.path(getwd(), "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
+
+gene_sets_input_directory <- file.path(getwd(), "MSigDB_gene_sets") %T>%
+    dir.create(., showWarnings = F, recursive = T)
+
+# Outputs
+gene_sets_ouput_directory <-
+    file.path(getwd(), "intermediate_files", "gene_sets_ouput_directory") %T>%
+    dir.create(., showWarnings = F, recursive = T)
+```
+
+# Inputs options and parameter settings
+
+```{r}
+
+# Specify the attributes of the input data.
+input_data_type <- c("microarray", "rna_seq")[2]
+
+whether_normalized <- FALSE
+whether_logarithmized <- FALSE
+
+# As for normalization, there is only normalized (microarray or RNA-seq) or raw count (RNA-seq or microarray)
+if (input_data_type == "rna_seq") {
+    print("Is the expression matrix containing raw counts or normalized values?")
+}
+
+# In nature, microarray doesn't have raw count. It must be normalized.
+if (input_data_type == "microarray") {
+    whether_normalized <- TRUE
+}
+
+if (input_data_type == "microarray" | whether_normalized == TRUE | whether_logarithmized == TRUE) {
+    warning("The code of this situation is written by imagination, so it is not tested with data.")
+}
+
+if (input_data_type == "rna_seq" | whether_normalized == FALSE | whether_logarithmized == FALSE) {
+    print("The code of this situation is written and tested by data.")
+}
+```
+
+# Expression data input for GSVA package
+
+The GSVA package in this script can handle two kind of data: microarray and RNA-seq
+
+The GSVA input can be normalized expression matrix or raw count expression matrix. If you get the RNA-seq data, it's better to have the raw count data than to have the normalized data. But if your collaborators only give you the normalized data, you have to use it. If you get the microarray data, there is no choice, you must use the normalized data.
+
+No matter microarray or RNA-seq data, the normalized (cpm) expression matrix must be logged with base 2 so some desired filters can be applied. if you don't have raw count matrix as input of RNA-seq data, even if you have RNA-seq data at hand, you still have to use the microarray mode
+
+## read in the gene sets annotation files into a list
+
+```{r}
+gene_sets_names <- gene_sets_input_directory %>%
+    list.files %>%
+    str_split(., "\\.", simplify = T) %>%
+    .[, 1:2] %>%
+    as.data.frame %>%
+    unite(., "concatenated", sep = "_") %>%
+    unlist %>%
+    unname
+
+gene_sets_list <- gene_sets_input_directory %>%
+    list.files(., full.names = T) %>%
+    set_names(., gene_sets_names) %>%
+    lapply(., getGmt)
+```
+
+#  load compressed file of the gene expression matrix
+
+```{r}
+expression_dataframe <- read.csv(compression_file_path, row.names = 1, check.names = F)
+```
+
+# normaization and logarithmization
+
+```{r}
+if (whether_normalized == FALSE & whether_logarithmized == FALSE) {
+    # Normalize the expression data using counts per million (CPM).
+    # The cpm function is provided in edgeR package.
+    # https://www.rdocumentation.org/packages/edgeR/versions/3.14.0/topics/cpm
+    normalized_expression_dataframe <- expression_dataframe %>%
+        cpm(., log = T, prior.count = 0.01) %>%
+        as.data.frame
+}
+
+if (whether_normalized == TRUE & whether_logarithmized == FALSE) {
+    warning("The code of this situation is written by imagination, so it is not tested with data.")
+    normalized_expression_dataframe <- log2(expression_dataframe + 0.01)
+}
+
+if (whether_normalized == TRUE & whether_logarithmized == TRUE) {
+    warning("The code of this situation is written by imagination, so it is not tested with data.")
+    normalized_expression_dataframe <- expression_dataframe
+}
+
+if (whether_normalized == FALSE & whether_logarithmized == TRUE) {
+    stop("No one should logarithmize the raw count.")
+}
+```
+
+# apply filters
+
+```{r}
+# Calculate the Interquartile Range (IQR), which is used to remove outliers.
+normalized_expression_dataframe$IQR <- apply(normalized_expression_dataframe, 1, IQR)
+
+# find out the max expression value among samples for each gene.
+normalized_expression_dataframe$max_expression <- apply(normalized_expression_dataframe, 1, max)
+
+# Apply some filters to the expression matrix.
+
+# Ensure the expression of a gene has enough variation among samples.
+# The variation is that the Interquartile Range (IQR) values must be greater than a threshold.
+# The threshold for unlogarithmized CPM is 2.
+# The threshold for base-2 logarithmized CPM is 1.
+normalized_expression_dataframe <- normalized_expression_dataframe[normalized_expression_dataframe$IQR >= 1, ]
+
+# Ensure the expression of a gene can not be too small,
+# So the gene expression should surpass the threshold.
+# The threshold for unlogarithmized CPM is 1.
+# The threshold for base-2 logarithmized CPM is 0.
+normalized_expression_dataframe <- normalized_expression_dataframe[normalized_expression_dataframe$max_expression >= 0, ]
+
+# The above filters can only be used on the normalized and logarithmized expression dataframe.
+# After fitler application, the raw count expression dataframe is still preferred by the GSVA package.
+filtered_raw_expression_dataframe <- expression_dataframe[rownames(normalized_expression_dataframe), ]
+```
+
+***
+
+# apply gsva
+
+```{r}
+accumulation_list <- list()
+for (gene_sets_name in gene_sets_names) {
+    
+    # estimate GSVA enrichment scores
+    if (whether_normalized == TRUE) {
+	    # If the input is microarray data (inherently normalized) or normalized RNA-seq data, then normal distribution is used.
+        warning("The code of this situation is written by imagination, so it is not tested with data.")
+	    gsva_table <- normalized_expression_dataframe %>%
+	        as.matrix %>%
+	        gsva(., gene_sets_list[[gene_sets_name]], min.sz=10, max.sz=500, kcdf="Gaussian", verbose=FALSE)
+    } else {
+	    # if the input is the RNA-seq raw count data, then Poisson distribution is used.
+	    gsva_table <- filtered_raw_expression_dataframe %>%
+	        as.matrix %>%
+	        gsva(., gene_sets_list[[gene_sets_name]], min.sz=10, max.sz=500, kcdf="Poisson", verbose=FALSE)
+    }
+    accumulation_list[[gene_sets_name]] <- gsva_table
+}
+```
+
+# Write gsva results to the hard disk
+
+```{r}
+for(i_name in names(accumulation_list)) {
+    write.csv(accumulation_list[[i_name]],
+              file = file.path(gene_sets_ouput_directory, paste(i_name, "csv", sep = ".")),
+              quote = F)
+}
+```
+
+# how to analyze gsva result?
+
+[Question: Does GSVA enrichment score comes negative?](https://support.bioconductor.org/p/84439/)
+
+
+```{r}
+proc.time() - ptm
+```
+

@@ -1,0 +1,291 @@
+---
+title: "Analyzing RNA-seq data with DESeq2"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+# Introduction
+
+[DESeq2 official tutorial](https://bioconductor.org/packages/release/bioc/vignettes/DESeq2/inst/doc/DESeq2.html)
+
+[DESeq2 result explanation](https://chipster.csc.fi/manual/deseq2.html)
+
+[The Wald test is a standard way to extract a P value from a regression fit](https://www.biostars.org/p/308142/)
+
+
+
+
+
+```{r initial-settings, message = F, warning = F}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# BiocManager::install("DESeq2")
+# BiocManager::install("tximport")
+# BiocManager::install("tximportData")
+# BiocManager::install("tximeta")
+# BiocManager::install("pasilla")
+# BiocManager::install("airway")
+# BiocManager::install("apeglm")
+# BiocManager::install("vsn")
+# BiocManager::install("pheatmap")
+# BiocManager::install("RColorBrewer")
+
+library("RColorBrewer")
+BiocManager::install("vsn")
+library("IHW")
+library("vsn")
+library("pheatmap")
+library("BiocParallel")
+register(MulticoreParam(4))
+
+library("apeglm")
+library("magrittr")
+library("DESeq2")
+```
+
+# Input and output directories
+
+```{r}
+# Inputs
+compression_file_path <-
+    file.path(getwd(), "intermediate_files", "htseq_count_expression_matrix.tar.gz")
+```
+
+#  load compressed file of the gene expression matrix
+
+```{r}
+# Get the only text file name in the compressed file.
+raw_file_name <- untar(tarfile =compression_file_path, list=TRUE)[1]
+
+# decompress the compressed file.
+return_code <- untar(tarfile = compression_file_path, tar = "tar")
+if (return_code != 0) {
+    stop("decompression is unsuccessful!")
+}
+
+# Read the decompressed file into a R data frame
+decompressed_dataframe <- read.csv(raw_file_name, row.names = 1)
+
+# Delete the decompressed file
+unlink(raw_file_name)
+
+expression_dataframe <- decompressed_dataframe
+```
+
+```{r}
+
+library("readr")
+
+library("tximport")
+
+library("tximportData")
+dir <- system.file("extdata", package="tximportData")
+samples <- read.table(file.path(dir,"samples.txt"), header=TRUE)
+samples
+samples$condition <- factor(rep(c("A","B"),each=3))
+samples
+rownames(samples) <- samples$run
+samples
+samples[,c("pop","center","run","condition")]
+```
+
+```{r}
+files <- file.path(dir,"salmon", samples$run, "quant.sf.gz")
+files
+
+names(files) <- samples$run
+files
+
+tx2gene <- read_csv(file.path(dir, "tx2gene.gencode.v27.csv"))
+tx2gene
+
+txi <- tximport(files, type="salmon", tx2gene=tx2gene)
+txi
+
+coldata <- samples
+coldata$files <- files
+coldata$names <- coldata$run
+library("tximeta")
+se <- tximeta(coldata)
+se
+ddsTxi <- DESeqDataSet(se, design = ~ condition)
+ddsTxi
+```
+
+
+```{r}
+library("airway")
+
+data("airway")
+se <- airway
+
+ddsSE <- DESeqDataSet(se, design = ~ cell + dex)
+ddsSE
+
+library("pasilla")
+pasCts <- system.file("extdata",
+                      "pasilla_gene_counts.tsv",
+                      package="pasilla", mustWork=TRUE)
+pasAnno <- system.file("extdata",
+                       "pasilla_sample_annotation.csv",
+                       package="pasilla", mustWork=TRUE)
+cts <- as.matrix(read.csv(pasCts,sep="\t",row.names="gene_id"))
+coldata <- read.csv(pasAnno, row.names=1)
+coldata <- coldata[,c("condition","type")]
+head(cts,2)
+coldata
+rownames(coldata) <- sub("fb", "", rownames(coldata))
+rownames(coldata)
+all(rownames(coldata) %in% colnames(cts))
+all(rownames(coldata) == colnames(cts))
+cts <- cts[, rownames(coldata)]
+all(rownames(coldata) == colnames(cts))
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = coldata,
+                              design = ~ condition)
+dds
+
+featureData <- data.frame(gene=rownames(cts))
+mcols(dds) <- DataFrame(mcols(dds), featureData)
+mcols(dds)
+directory <- system.file("extdata", package="pasilla",
+                         mustWork=TRUE)
+directory
+
+sampleFiles <- grep("treated",list.files(directory),value=TRUE)
+sampleFiles
+sampleCondition <- sub("(.*treated).*","\\1",sampleFiles)
+sampleCondition
+sampleTable <- data.frame(sampleName = sampleFiles,
+                          fileName = sampleFiles,
+                          condition = sampleCondition)
+sampleTable
+ddsHTSeq <- DESeqDataSetFromHTSeqCount(sampleTable = sampleTable,
+                                       directory = directory,
+                                       design= ~ condition)
+ddsHTSeq
+
+library("airway")
+data("airway")
+se <- airway
+se
+ddsSE <- DESeqDataSet(se, design = ~ cell + dex)
+ddsSE
+keep <- rowSums(counts(dds)) >= 10
+dds <- dds[keep,]
+dds$condition <- factor(dds$condition, levels = c("untreated","treated"))
+dds$condition
+dds$condition <- droplevels(dds$condition)
+dds$condition
+
+dds <- DESeq(dds)
+dds
+res <- results(dds)
+res
+res <- results(dds, contrast=c("condition","treated","untreated"))
+res
+resultsNames(dds)
+resLFC <- lfcShrink(dds, coef="condition_treated_vs_untreated", type="apeglm")
+resOrdered <- res[order(res$pvalue),]
+resOrdered
+sum(res$padj < 0.1, na.rm=TRUE)
+res05 <- results(dds, alpha=0.05)
+summary(res05)
+
+
+resIHW <- results(dds, filterFun=ihw)
+summary(resIHW)
+sum(resIHW$padj < 0.1, na.rm=TRUE)
+metadata(resIHW)$ihwResult
+plotMA(res, ylim=c(-2,2))
+plotMA(resLFC, ylim=c(-2,2))
+
+idx <- identify(res$baseMean, res$log2FoldChange)
+rownames(res)[idx]
+plotCounts(dds, gene=which.min(res$padj), intgroup="condition")
+d <- plotCounts(dds, gene=which.min(res$padj), intgroup="condition", 
+                returnData=TRUE)
+library("ggplot2")
+ggplot(d, aes(x=condition, y=count)) + 
+  geom_point(position=position_jitter(w=0.1,h=0)) + 
+  scale_y_log10(breaks=c(25,100,400))
+
+mcols(res)$description
+colData(dds)
+ddsMF <- dds
+ddsMF$type <- factor(x = ddsMF$type, levels = c("single-read", "paired-end"))
+levels(ddsMF$type) <- sub("-.*", "", levels(ddsMF$type))
+levels(ddsMF$type)
+design(ddsMF) <- formula(~ type + condition)
+ddsMF <- DESeq(ddsMF)
+resMF <- results(ddsMF)
+head(resMF)
+
+resMFType <- results(ddsMF,
+                     contrast=c("type", "single", "paired"))
+head(resMFType)
+vsd <- vst(dds, blind=FALSE)
+rld <- rlog(dds, blind=FALSE)
+head(assay(vsd), 3)
+ntd <- normTransform(dds)
+
+meanSdPlot(assay(ntd))
+
+select <- order(rowMeans(counts(dds,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds)[,c("condition","type")])
+pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+pheatmap(assay(vsd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+pheatmap(assay(rld)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+
+sampleDists <- dist(t(assay(vsd)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$condition, vsd$type, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$condition, vsd$type, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+plotPCA(vsd, intgroup=c("condition", "type"))
+
+pcaData <- plotPCA(vsd, intgroup=c("condition", "type"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+ggplot(pcaData, aes(PC1, PC2, color=condition, shape=type)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()
+
+```
+
+
+
+```{r}
+proc.time() - ptm
+```
+
