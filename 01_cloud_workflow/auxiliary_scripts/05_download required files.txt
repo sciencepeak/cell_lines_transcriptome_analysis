@@ -1,0 +1,6 @@
+# download files from Terra using Google Cloud SDK Shell.
+
+# local command to download
+cd D:\MyData\Git\cell_lines_transcriptome_analysis\02_laptop_workflow
+gsutil -m cp -r -n gs://fc-secure-b93dcb7d-39d9-47ff-9bd9-b281cb9a69de/results/htseq_count_result_directory .
+

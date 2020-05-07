@@ -1,4 +1,4 @@
-workflow MyBestWorkflow {
+workflow SimplifiedHisatAlignmentWorkflow {
     # IMPORTANT:
     # This script only handles fastq. fastqList is not handled.
 
@@ -7,10 +7,12 @@ workflow MyBestWorkflow {
     String base_file_name
 
     # Required for fastq
-    File? fastq_r1
-    File? fastq_r2
+    File? fastqr1
+    File? fastqr2
 
     # Handle single_ended or pair_ended?
+    # we can select the first valid element.
+    # Given an array of optional values, select_first will select the first defined value and return it.
     Boolean? single_ended
     Boolean single_end_attribute = select_first([single_ended, false])
 
@@ -32,19 +34,13 @@ workflow MyBestWorkflow {
 
     # These two locations on Google Drive Bucket are used to collect results,
     # namely, bam files and htseq-count text files.
-    String sorted_bam_result_directory
-    String htseq_count_result_directory
-
-    call StringToFile {
-        input:
-            sample_name = base_file_name,
-            fastq_r1_string = fastq_r1,
-            fastq_r2_string = fastq_r2
-    }
+    String picard_remove_duplicates_results
+    String htseq_count_results
 
     call FastqToSam {
         input:
-            fastq_list_files = StringToFile.fastq_list_files,
+            fastq_1 = fastqr1,
+            fastq_2 = fastqr2,
             single = single_end_attribute,
             sample_name = base_file_name,
             hisat_index = hisat_index,
@@ -54,14 +50,17 @@ workflow MyBestWorkflow {
 
     call SamToSortedBam {
         input:
-            unsorted_sam = FastqToSam.initially_mapped_sam,
-            sample_name = base_file_name
+            sam = FastqToSam.initially_mapped_sam,
+            sample_name = base_file_name,
+            id = FastqToSam.id,
+            sm = FastqToSam.sm
     }
 
     call PicardMarkDuplicates {
         input:
             sample_name = base_file_name,
-            sorted_bam = SamToSortedBam.sorted_bam
+            sorted_bam_file = SamToSortedBam.sorted_bam,
+            picard_remove_duplicates_results = picard_remove_duplicates_results
     }
 
     call RemoveUnmappedReads {
@@ -78,59 +77,32 @@ workflow MyBestWorkflow {
             sample_name = base_file_name,
             sam_to_count = RemoveUnmappedReads.unmapped_reads_removed_sam,
             gtf_annotation = ref_gtf,
-            strandness = strandness
+            strandness = strandness,
+            htseq_count_results = htseq_count_results
     }
 
-    call CompressResults {
-        input:
-            sample_name = base_file_name,
-            htseq_count_txt = CallHtseqCount.htseq_count_txt
-    }
 
     call CollectResultFiles {
         input:
-            sorted_bam = SamToSortedBam.sorted_bam,
-            htseq_count_compressed_file = CompressResults.htseq_count_compressed_file,
-            sorted_bam_result_directory = sorted_bam_result_directory,
-            htseq_count_result_directory = htseq_count_result_directory
+            duplicates_removed_bam = PicardMarkDuplicates.duplicates_removed_bam,
+            htseq_count_txt = CallHtseqCount.htseq_count_txt,
+            picard_remove_duplicates_results = picard_remove_duplicates_results,
+            htseq_count_results = htseq_count_results
     }
 
     # Output files of the workflows.
     output {
+        File initially_mapped_sam = FastqToSam.initially_mapped_sam
         File sorted_bam = SamToSortedBam.sorted_bam
+        File duplicates_removed_bam = PicardMarkDuplicates.duplicates_removed_bam
+        File unmapped_reads_removed_sam = RemoveUnmappedReads.unmapped_reads_removed_sam
         File htseq_count_txt = CallHtseqCount.htseq_count_txt
     }
 }
 
-task StringToFile {
-    String sample_name
-    String fastq_r1_string
-    String fastq_r2_string
-
-    command {
-        echo "${fastq_r1_string}" | tr ";" "\n" > ${sample_name}.fastq_r1_list.txt
-        echo "${fastq_r2_string}" | tr ";" "\n" > ${sample_name}.fastq_r2_list.txt
-    }
-
-    output {
-        Array[File] fastq_list_files = glob("*_list.txt")
-    }
-
-    runtime {
-        memory: "8G"
-        cpu: 1
-        disks: "local-disk 500 SSD"
-        docker: "debian"
-    }
-}
-
 task FastqToSam {
-
-    Array[File] fastq_list_files
-
-    Array[File]? fastq_r1_list = read_lines(fastq_list_files[0])
-    Array[File]? fastq_r2_list = read_lines(fastq_list_files[1])
-
+    File fastq_1
+    File? fastq_2
     Boolean single
     String sample_name
 
@@ -140,54 +112,67 @@ task FastqToSam {
     String? strandness
     String strandness_arg = if defined(strandness) then "--rna-strandness " + strandness + " " else ""
 
+    # use wdl to de the condition detmination is much more elegant than linux command.
+    # Linux commands should be as simple as possible.
     command {
         if [ "$single" = true ] ; then
-            files=$(echo "-U "${sep="," fastq_r1_list})
+            files=$(echo "-U "${fastq_1})
         else
-            files=$(echo "-1 "${sep="," fastq_r1_list}" -2 "${sep="," fastq_r2_list})
+            files=$(echo "-1 "${fastq_1}" -2 "${fastq_2})
         fi
 
-        /usr/local/bin/hisat2 -p 2 --dta -x ${hisat_prefix} ${strandness_arg} $files -S ${sample_name}.initially_mapped.sam
+        id=$(zcat < ${fastq_1} | head -n 1 | cut -f 1-4 -d":" | sed 's/@//' | sed 's/:/./g')
+        sm=$(zcat < ${fastq_1} | head -n 1 | grep -Eo "[ATGCN]+$")
+
+        echo $id > ID.txt
+        echo $sm > SM.txt
+
+        /usr/local/bin/hisat2 -p 8 --dta -x ${hisat_prefix} --rg-id $id --rg PL:ILLUMINA --rg PU:${sample_name} --rg LB:$id.$sm --rg SM:${sample_name} ${strandness_arg} $files -S ${sample_name}.$id.$sm.initially_mapped.sam
     }
 
     output {
         File initially_mapped_sam = glob("*.initially_mapped.sam")[0]
+        String id = read_string("ID.txt")
+        String sm = read_string("SM.txt")
     }
 
     runtime {
-        memory: "13G"
-        cpu: 2
+        memory: "16G"
+        cpu: 1
         disks: "local-disk 500 SSD"
         docker: "zlskidmore/hisat2:latest"
     }
 }
 
 task SamToSortedBam {
-    File unsorted_sam
+    File sam
     String sample_name
+    String sm
+    String id
 
     command {
-        /usr/local/bin/samtools sort -@ 2 -l 9 -o ${sample_name}.sorted.bam ${unsorted_sam}
+        /usr/local/bin/samtools sort -@ 8 -o ${sample_name}.${id}.${sm}.sorted.bam ${sam}
     }
 
     output {
-        File sorted_bam = "${sample_name}.sorted.bam"
+        File sorted_bam = "${sample_name}.${id}.${sm}.sorted.bam"
     }
 
     runtime {
-        memory: "13G"
-        cpu: 2
+        memory: "8G"
+        cpu: 1
         disks: "local-disk 500 SSD"
-        docker: "zlskidmore/samtools:latest"
+        docker: "broadinstitute/genomes-in-the-cloud:2.3.1-1512499786"
     }
 }
 
 task PicardMarkDuplicates {
     String sample_name
-    File sorted_bam
+    File sorted_bam_file
+    String picard_remove_duplicates_results
 
     command {
-        java -jar /usr/picard/picard.jar MarkDuplicates I=${sorted_bam} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_removed.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
+        java -Xmx4g -jar /usr/picard/picard.jar MarkDuplicates I=${sorted_bam_file} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_removed.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
     }
 
     output {
@@ -197,8 +182,8 @@ task PicardMarkDuplicates {
     runtime {
         docker: "broadinstitute/picard:latest"
         disks: "local-disk 500 SSD"
-        memory: "13G"
-        cpu: 2
+        memory: "16G"
+        cpu: 1
     }
 }
 
@@ -240,6 +225,8 @@ task CallHtseqCount {
     String? strandness
     String strandness_arg = if defined(strandness) then "--stranded=yes" else "--stranded=no"
 
+    String htseq_count_results
+
     command {
         # htseq-count [options] <alignment_files> <gff_file>
         # https://htseq.readthedocs.io/en/release_0.11.1/count.html
@@ -259,40 +246,16 @@ task CallHtseqCount {
     }
 }
 
-task CompressResults {
-    String sample_name
-    File htseq_count_txt
-
-    # -c --stdout      Compress or decompress to standard output.
-    command {
-        # gzip -9 -cvf ${htseq_count_txt} > ${sample_name}.htseq_count.txt.gz
-        bzip2 -9 -cvf ${htseq_count_txt} > ${sample_name}.htseq_count.txt.bz2
-    }
-
-    output {
-        # File htseq_count_compressed_file = "${sample_name}.htseq_count.txt.gz"
-        File htseq_count_compressed_file = "${sample_name}.htseq_count.txt.bz2"
-    }
-
-    runtime {
-        memory: "8G"
-        cpu: 1
-        disks: "local-disk 500 SSD"
-        docker: "cmd.cat/bzip2"
-    }
-}
-
 
 task CollectResultFiles {
-    File sorted_bam
-    File htseq_count_compressed_file
-
-    String sorted_bam_result_directory
-    String htseq_count_result_directory
+    File duplicates_removed_bam
+    File htseq_count_txt
+    String picard_remove_duplicates_results
+    String htseq_count_results
 
     command {
-        gsutil cp ${sorted_bam} ${sorted_bam_result_directory}
-        gsutil cp ${htseq_count_compressed_file} ${htseq_count_result_directory}
+        gsutil cp ${duplicates_removed_bam} ${picard_remove_duplicates_results}
+        gsutil cp ${htseq_count_txt} ${htseq_count_results}
     }
 
     runtime {

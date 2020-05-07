@@ -1,0 +1,149 @@
+---
+title: "Create a conversion table for the ensembl gene id and hgnc symbol"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+# GTF file source
+
+The file [Homo_sapiens.GRCh38.99.gtf](ftp://ftp.ensembl.org/pub/release-99/gtf/homo_sapiens/Homo_sapiens.GRCh38.99.gtf.gz) is the GTF annotation file downloaded from ensembl.org.
+
+# GTF file nine-column specifications
+Refers to [GFF/GTF File Format - Definition and supported options](https://uswest.ensembl.org/info/website/upload/gff.html)
+
+1. seqname - name of the chromosome or scaffold; chromosome names can be given with or without the 'chr' prefix. Important note: the seqname must be one used within Ensembl, i.e. a standard chromosome name or an Ensembl identifier such as a scaffold ID, without any additional content such as species or assembly. See the example GFF output below.
+2. source - name of the program that generated this feature, or the data source (database or project name)
+3. feature - feature type name, e.g. Gene, Variation, Similarity
+4. start - Start position of the feature, with sequence numbering starting at 1.
+5. end - End position of the feature, with sequence numbering starting at 1.
+6. score - A floating point value.
+7. strand - defined as + (forward) or - (reverse).
+8. frame - One of '0', '1' or '2'. '0' indicates that the first base of the feature is the first base of a codon, '1' that the second base is the first base of a codon, and so on..
+9. attribute - A semicolon-separated list of tag-value pairs, providing additional information about each feature.
+
+# GTF file processing
+
+```{r initial-settings}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("magrittr")
+library("readr")
+```
+
+# Input files and directories
+
+```{r set-input}
+# input:
+gtf_download_link <- "ftp://ftp.ensembl.org/pub/release-99/gtf/homo_sapiens/Homo_sapiens.GRCh38.99.gtf.gz"
+compressed_gtf_file_name <- "Homo_sapiens.GRCh38.99.gtf.gz"
+uncompressed_gtf_file_name <- "Homo_sapiens.GRCh38.99.gtf"
+```
+
+# Output files and directories
+
+```{r set-output}
+# output:
+
+output_subdirectory <- file.path(getwd(), "intermediate_files") %T>%
+  dir.create(., showWarnings = F, recursive = T)
+
+output_base_name <- "ensemble_hgnc_conversion_table_from_gtf"
+
+output_text_file_name <- paste(output_base_name, "txt", sep = ".")
+output_compressed_file_name <- paste(output_base_name, "tar.gz", sep = ".")
+
+output_compressed_file_path <- file.path(getwd(), "intermediate_files", output_compressed_file_name)
+
+
+```
+
+```{r read-input-file}
+
+# GTF file manipulation options
+whether_need_download_now <- TRUE
+whether_already_compressed <- TRUE
+operating_system <- "Windows"
+
+if (whether_need_download_now == TRUE) {
+    download.file(url = gtf_download_link,
+                  destfile = compressed_gtf_file_name,
+                  method = "internal")
+}
+
+# You don't have to decompress the gz file to proceed.
+# R added transparent decompression for certain kinds of compressed files in the latest version (2.10).
+# If you have your files compressed with bzip2, xvz, or gzip,
+# they can be read into R as if they are plain text files.
+# You should have the proper filename extensions and specify the column types or classes.
+if (whether_already_compressed == TRUE) {
+    path_to_input_file <- compressed_gtf_file_name
+} else {
+    path_to_input_file <- uncompressed_gtf_file_name
+}
+
+# c stands for character type. Take all 9 columns as character.
+column_type_list <- rep("c", times = 9) %>%
+    as.list
+
+# First five rows are just descriptions, so we skip them.
+raw_gtf_table <- path_to_input_file %>%
+    read_delim(file = ., delim = "\t", col_names = F, skip = 5, col_types = column_type_list) %>%
+    as.data.frame %>%
+    set_colnames(.,  c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"))
+```
+
+
+```{r information-extraction}
+# Only gene records are interesting.
+subset_gtf_table <- raw_gtf_table[raw_gtf_table$feature == "gene", ]
+
+# Extract the ensembl gene ids from the attribute column
+ensembl_gene_ids <- subset_gtf_table$attribute %>%
+    sapply(., function(x) strsplit(x, ";")[[1]][1]) %>%
+    sapply(., function(x) strsplit(x, " ")[[1]][2]) %>%
+    gsub("\"", "", ., fixed = TRUE) %>%
+    unname
+
+# Extract the hgnc symbols from the attribute column
+hgnc_symbols <- subset_gtf_table$attribute %>%
+    sapply(., function(x) strsplit(x, ";")[[1]][3]) %>%
+    sapply(., function(x) strsplit(x, " ")[[1]][3]) %>%
+    gsub("\"", "", ., fixed = TRUE) %>%
+    unname
+
+# Match the ensembl gene ids and the hgnc symbols
+output_dataframe <- data.frame(ensembl_gene_id = ensembl_gene_ids,
+                               hgnc_symbol = hgnc_symbols)
+```
+
+
+```{r write-output-file}
+# Output the conversion table of ensembl gene ids and the hgnc symbols.
+write.table(output_dataframe, sep = "\t", file = output_text_file_name, quote = F, row.names = F)
+
+# We can compress the output text file into a tar.gz file to save hard disk space.
+tar(tarfile = output_compressed_file_name, files = output_text_file_name,
+    compression = "gzip", compression_level = 9, tar = "tar")
+```
+
+
+```{r delete_files}
+# relocate the compressed file.
+file.rename(from = output_compressed_file_name, to = output_compressed_file_path)
+
+# Delete output plain text file. 
+unlink(output_text_file_name)
+
+# Delete input gtf file.
+unlink(path_to_input_file)
+
+proc.time() - ptm
+```
+

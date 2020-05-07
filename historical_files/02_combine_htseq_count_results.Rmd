@@ -1,10 +1,12 @@
 ---
 title: "Combine and clean the HTSeq-count result files"
-author: "Author: Vegetable Bird"
+author: "Author: Old Vegetable Bird"
 date: "`r format(Sys.time(), '%F')`"
 output:
-  html_document:
-    df_print: paged
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
 ---
 
 # Usage introduction
@@ -23,74 +25,78 @@ ptm <- proc.time()
 # proc.time() - ptm
 options(stringsAsFactors = F)
 library("magrittr")
-library("R.utils")
 ```
 
-# Set up input files, directories, and parameters
+## Set up input/out files, directories, and parameters
+Ideally, the user only needs to modify this chunk to run their own data set.
 
-```{r}
-# All the downloaded HTSeq-count result text files should be put under one directory.
-htseq_count_result_directory <- file.path(".", "htseq_count_result_directory")
-
-# Specify the path to the compressed file of ensembl gene id and hgnc symbol conversion table.
-
-compressed_conversion_table_path <-
-    file.path(getwd(), "intermediate_files", "ensemble_hgnc_conversion_table.hg38.txt.bz2")
-
+```{r inputs}
 # the HTSeq-count result text files are aggregated in R by a function provided in this script,
 source("./utility_scripts/summarize_expression.R")
 
+# All the downloaded HTSeq-count result text files should be put under this directory.
+htseq_count_result_directory <- file.path(getwd(), "htseq_count_results")
+
 # the function summarize_expression will handle "HTSeq" result, rather than "StringTie" result, at this time.
 current_format <- "HTSeq"
+
+# Specify the path to the compressed file of ensembl gene id and hgnc symbol conversion table.
+compression_file_path <- file.path(getwd(),
+                                   "intermediate_files",
+                                   "ensemble_hgnc_conversion_table_from_gtf.tar.gz")
 ```
 
-# Set up output files and directories.
 
 ```{r outputs}
-output_subdirectory <- file.path(getwd(), "intermediate_files") %T>%
-    dir.create(., showWarnings = F, recursive = T)
+# Set up output related names
+output_base_name <- "htseq_count_expression_matrix"
 
-# We can compress the output text file to save hard disk space.
-output_csv_file_name <- "htseq_count_expression_matrix.csv"
+# We can compress the output text file into a tar.gz file to save hard disk space.
+output_csv_file_name <- paste(output_base_name, "csv", sep = ".")
+output_compressed_file_name <- paste(output_base_name, "tar.gz", sep = ".")
+
+# For now we only output the compressed matrix file to save disk space.
+path_to_output_compressed_file <- file.path(getwd(), "intermediate_files", output_compressed_file_name)
 ```
 
-# Merge gene expression values per sample per file into a gene expression matrix.
+## Merge gene expression values per sample per file into a gene expression matrix.
 
 Specifically, run `summarize_expression(files = list_of_files, samples = list_of_samples, format = “HTSeq”)`
 
 ```{r merge-into-expression-matrix}
+
+# Create a character vector of full paths to the HTSeq-count result files
+paths_to_htseq_count_files <- list.files(htseq_count_result_directory, full.names = T)
+    
+
 # Create a character vector of the sample names corresponding to the file names.
 # Usually extract information from the HTSeq-count result file names.
 sample_names <- list.files(htseq_count_result_directory) %>%
     sapply(., function(x) strsplit(x, "\\.")[[1]][1]) %>%
     unname
 
-# Create a character vector of full paths to the HTSeq-count result files
 # Call the summarize_expression function to get a data frame of the gene expression matrix across samples.
-raw_expression_dataframe <- list.files(htseq_count_result_directory, full.names = T) %>%
+raw_expression_dataframe <- paths_to_htseq_count_files %>%
     summarize_expression(files = ., samples = sample_names, format = current_format)
 
 # Do some cleaning work to make the downstream process is easier.
 cleaned_expression_dataframe <- raw_expression_dataframe %>%
-    # remove the first five rows that are counts of low quality
     .[-(1:5), ] %>%
-    # change column names
     set_colnames(., c("ensembl_gene_id", colnames(.)[-1])) %>%
-    # remove the row names
     set_rownames(., NULL)
+
 
 # The first column is the ensembl_gene_id, so we calcuate the median of each row for the rest columns.
 # Later on, the duplicated hgnc symbols will be selected based on the expression median values.
 cleaned_expression_dataframe$expression_median <- apply(cleaned_expression_dataframe[, -1], 1, median)
 
-
 head(cleaned_expression_dataframe)
-
 ```
 
-# Load the Ensembl gene id and hgnc symbol conversion table.
+## Load the Ensembl gene id and hgnc symbol conversion table.
+The conversion table is a custom table made by extracting information from Ensembl gtf annotation file. This chuck of code about decompression can be used in other script.
 
-## Why use a custom conversion table instead of biomaRt library?
+### Why use a custom conversion table instead of biomaRt library?
 
 Using [biomaRt library](https://www.bioconductor.org/packages/devel/bioc/vignettes/biomaRt/inst/doc/biomaRt.html):
 
@@ -98,27 +104,36 @@ Using [biomaRt library](https://www.bioconductor.org/packages/devel/bioc/vignett
 
 2. The Internet connection to biomaRt server at [emsembl.org](https://uswest.ensembl.org/index.html) is slow and unstable.
 
-## load-conversion-table
+```{r load-conversion-table}
+# Get the only text file name in the compressed file.
+raw_file_name <- untar(tarfile =compression_file_path, list=TRUE)[1]
 
-The conversion table is a custom table made by extracting information from Ensembl gtf annotation file.
+# decompress the compressed file.
+return_code <- untar(tarfile = compression_file_path, tar = "tar")
+if (return_code != 0) {
+    stop("decompression is unsuccessful!")
+}
 
-Note that the R can directly read the compressed file into a table, which is a convenient feature.
+# Read the decompressed file into a R data frame
+decompressed_dataframe <- read.delim(raw_file_name, header = T)
 
-```{r}
-conversion_dataframe <- read.delim(compressed_conversion_table_path, header = T)
-
-(length(conversion_dataframe$hgnc_symbol) - length(unique(conversion_dataframe$hgnc_symbol))) %>%
-    cat("The number of duplicated hgnc symbols in the conversion table is: ", ., sep = "", "\n")
+# Delete the decompressed file
+unlink(raw_file_name)
 ```
 
-# Map the ensembl gene ids to hgnc symbols.
+## Map the ensembl gene ids to hgnc symbols.
 
-```{r}
+```{r merge-expression-matrix-dataframe-and-conversion-table}
+conversion_dataframe <- decompressed_dataframe
+
+(length(conversion_dataframe$hgnc_symbol) - length(unique(conversion_dataframe$hgnc_symbol))) %>%
+cat("The number of duplicated hgnc symbols in the conversion table is: ", ., sep = "", "\n")
+
 # left join the expression matrix and conversion table.
 merged_expression_dataframe <- merge(cleaned_expression_dataframe,
                                      conversion_dataframe,
                                      by = "ensembl_gene_id",
-                                     all.x = T)
+                                     all.x=T)
 ```
 
 ## Remove duplicated hgnc symbols.
@@ -130,12 +145,12 @@ For two duplicated hgnc symbols, the symbols with larger expression median value
 final_expression_dataframe <- merged_expression_dataframe %>%
     by(., .$hgnc_symbol, function(df_x) df_x[which.max(df_x$expression_median), ]) %>%
     do.call(rbind, .) %>%
-    inset(., c("ensembl_gene_id", "expression_median", "hgnc_symbol"), value = c(NULL, NULL, NULL))
+    inset(c("ensembl_gene_id", "expression_median", "hgnc_symbol"), value = c(NULL, NULL, NULL))
 
 head(final_expression_dataframe)
 ```
 
-# Write combined expression matrix to the hard disk and move the expression matrix to a proper folder
+## Write combined expression matrix to the hard disk.
 
 ```{r output}
 write.csv(final_expression_dataframe,
@@ -143,14 +158,20 @@ write.csv(final_expression_dataframe,
           quote = F,
           row.names = T)
 
-output_compressed_file_name <- bzip2(output_csv_file_name, compression = 9, overwrite = T)[1]
-output_compressed_file_name
-
-file.rename(from = output_compressed_file_name,
-            to = file.path(output_subdirectory, output_compressed_file_name))
+# Compress the output file.
+tar(tarfile = output_compressed_file_name, files = output_csv_file_name,
+    compression = "gzip", compression_level = 9, tar = "tar")
 ```
 
+# Move the expression matrix to a proper folder.
+
 ```{r output-relocation}
+# relocate the compressed file.
+file.rename(from = output_compressed_file_name, to = path_to_output_compressed_file)
+
+# Delete the original file.
+unlink(output_csv_file_name)
+
 proc.time() - ptm
 ```
 

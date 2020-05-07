@@ -1,0 +1,103 @@
+---
+title: "Summarize the HTSeq-count result files"
+author: "Author: Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Usage introduction
+
+```{r warning=F, message=F}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("magrittr")
+library("R.utils")
+library("readxl")
+library("ggplot2")
+library("ggpubr")
+```
+
+# Set up input and output files and directories.
+
+```{r}
+grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
+expression_path <- file.path(".", "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
+
+output_directory <- file.path(".", "intermediate_files")
+output_graph_file_name <- "batch_effect_test.pdf"
+```
+
+# Read the files from hard disk.
+
+```{r}
+raw_expression_dataframe <- read.csv(expression_path, row.names = 1, check.names = F)
+grouping_dataframe <- read_excel(grouping_path)
+```
+
+# Calculate the total read counts for each column (sample).
+
+```{r}
+batch_1_column_names <- grouping_dataframe %$%
+  subset(., Batch == 1) %>%
+  use_series(., File)
+batch_2_column_names <- grouping_dataframe %$%
+  subset(., Batch == 2) %>%
+  use_series(., File)
+
+batch_1_dataframe <- raw_expression_dataframe %$%
+  .[, colnames(.) %in% batch_1_column_names]
+batch_2_dataframe <- raw_expression_dataframe %$%
+  .[, colnames(.) %in% batch_2_column_names]
+
+batch_1_read_colsums <- colSums(batch_1_dataframe)
+batch_2_read_colsums <- colSums(batch_2_dataframe)
+```
+
+# Some statistics test.
+
+```{r}
+# Probably not all normal distribution.
+batch_1_shapiro_test_result <- shapiro.test(batch_1_read_colsums)
+batch_2_shapiro_test_result <- shapiro.test(batch_2_read_colsums)
+
+var.test(batch_1_read_colsums, batch_2_read_colsums)
+wilcox.test(batch_1_read_colsums, batch_2_read_colsums)
+```
+
+# Plot a graph to see the batch affect.
+
+```{r}
+dataframe_to_plot <- data.frame(
+    read_colsum = c(batch_1_read_colsums, batch_2_read_colsums),
+    batch_group = c(rep("batch_1", times = length(batch_1_read_colsums)),
+                    rep("batch_2", times = length(batch_2_read_colsums)))
+)
+
+my_comparisons <- list(c("batch_1", "batch_2"))
+
+my_plot <- ggplot(dataframe_to_plot,
+                  aes(x = batch_group, y = read_colsum, color = batch_group)) +
+    geom_boxplot() +
+    geom_jitter(width = 0.25, na.rm = TRUE) +
+    stat_compare_means(comparisons = my_comparisons, method = "wilcox.test", var.equal = T) +
+    ggtitle("Wilcoxon_rank_sum_test")
+
+ggsave(filename = output_graph_file_name,
+       plot = my_plot,
+       device = "pdf",
+       path = output_directory,
+       width = 170,
+       height = 170,
+       units = "mm")
+
+my_plot
+```
+
+```{r}
+proc.time() - ptm
+```
+

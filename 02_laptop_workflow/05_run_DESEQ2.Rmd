@@ -21,57 +21,41 @@ Two batches can be the multi-factor designs besides the treated vs untreated.
 Two batches should be seeing no difference in expression
 
 
-```{r}
-
-```
-
-
-```{r initial-settings, message = F, warning = F}
+#chunk 1: set up global environment and load packages 
+```{r message = F, warning = F}
 rm(list = ls())
 ptm <- proc.time()
 # proc.time() - ptm
 options(stringsAsFactors = F)
 library("magrittr")
+library("DESeq2")
+library("readxl")
 ```
 
-# Install DESeq2 related packages
 
-```{r message = F, warning = F}
-
-```
-
-# Codes for analysis
+# Set up input and output files and directories.
 
 ```{r}
-library("tximport")
-library("readr")
-library("tximportData")
-dir <- system.file("extdata", package="tximportData")
-dir
+grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
+expression_path <- file.path(".", "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
 
-samples <- read.table(file.path(dir,"samples.txt"), header=TRUE)
-samples
-
-
-samples$condition <- factor(rep(c("A","B"),each=3))
-samples$condition
-
-rownames(samples) <- samples$run
-rownames(samples)
-
-
-samples[,c("pop","center","run","condition")]
+output_directory <- file.path(".", "intermediate_files")
 ```
 
-```{r}
+# Read the files from hard disk.
 
+```{r}
+raw_expression_dataframe <- read.csv(expression_path, row.names = 1, check.names = F)
+grouping_dataframe <- read_excel(grouping_path)
 ```
 
 
 ```{r}
-
+dds <- DESeqDataSetFromMatrix(countData = raw_expression_dataframe,
+                              colData = grouping_dataframe,
+                              design = ~Group)
+dds
 ```
-
 
 ```{r}
 proc.time() - ptm
