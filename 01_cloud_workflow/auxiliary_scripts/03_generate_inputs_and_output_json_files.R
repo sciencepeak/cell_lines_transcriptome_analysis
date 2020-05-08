@@ -30,10 +30,12 @@ inputs_workspace_text <- "
     ref_gtf
     sorted_bam_result_directory
     htseq_count_result_directory
+    duplicates_metrics_result_directory
     "
 
 output_entity_text <- "
     sorted_bam
+    duplicates_metrics_txt
     htseq_count_txt
     "
 

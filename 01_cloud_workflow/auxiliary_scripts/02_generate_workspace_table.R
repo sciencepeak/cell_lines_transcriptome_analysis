@@ -18,6 +18,7 @@ raw_file_text <- "
     hisat_prefix	reference_data_02/hisat2/grch38_snp_tran/genome_snp_tran
     ref_gtf gs://reference_data_02/ensembl/Homo_sapiens.GRCh38.99.gtf
     sorted_bam_result_directory    gs://fc-secure-b93dcb7d-39d9-47ff-9bd9-b281cb9a69de/results/sorted_bam_result_directory
+    duplicates_metrics_result_directory gs://fc-secure-b93dcb7d-39d9-47ff-9bd9-b281cb9a69de/results/duplicates_metrics_result_directory
     htseq_count_result_directory  gs://fc-secure-b93dcb7d-39d9-47ff-9bd9-b281cb9a69de/results/htseq_count_result_directory
 "
 

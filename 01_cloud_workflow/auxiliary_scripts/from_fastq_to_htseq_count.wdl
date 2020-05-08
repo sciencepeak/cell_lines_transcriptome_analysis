@@ -29,6 +29,7 @@ workflow MyBestWorkflow {
     # These two locations on Google Drive Bucket are used to collect results,
     # namely, bam files and htseq-count text files.
     String sorted_bam_result_directory
+    String duplicates_metrics_result_directory
     String htseq_count_result_directory
 
     call StringToFile {
@@ -90,14 +91,17 @@ workflow MyBestWorkflow {
     call CollectResultFiles {
         input:
             sorted_bam = SamToCoordinateSortedBam.coordinate_sorted_bam,
+            duplicates_metrics_txt = PicardMarkDuplicates.duplicates_metrics_txt,
             htseq_count_compressed_file = CompressResults.htseq_count_compressed_file,
             sorted_bam_result_directory = sorted_bam_result_directory,
-            htseq_count_result_directory = htseq_count_result_directory
+            htseq_count_result_directory = htseq_count_result_directory,
+            duplicates_metrics_result_directory = duplicates_metrics_result_directory
     }
 
     # Output files of the workflows.
     output {
         File sorted_bam = SamToCoordinateSortedBam.coordinate_sorted_bam
+        File duplicates_metrics_txt = PicardMarkDuplicates.duplicates_metrics_txt
         File htseq_count_txt = CallHtseqCount.htseq_count_txt
     }
 }
@@ -187,11 +191,12 @@ task PicardMarkDuplicates {
     File input_bam
 
     command {
-        java -jar /usr/picard/picard.jar MarkDuplicates I=${input_bam} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_removed.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
+        java -jar /usr/picard/picard.jar MarkDuplicates I=${input_bam} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_metrics.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
     }
 
     output {
         File duplicates_removed_bam = "${sample_name}.duplicates_removed.bam"
+        File duplicates_metrics_txt = "${sample_name}.duplicates_metrics.txt"
     }
 
     runtime {
@@ -301,14 +306,17 @@ task CompressResults {
 
 task CollectResultFiles {
     File sorted_bam
+    File duplicates_metrics_txt
     File htseq_count_compressed_file
 
     String sorted_bam_result_directory
     String htseq_count_result_directory
+    String duplicates_metrics_result_directory
 
     command {
         gsutil cp ${sorted_bam} ${sorted_bam_result_directory}
         gsutil cp ${htseq_count_compressed_file} ${htseq_count_result_directory}
+        gsutil cp ${duplicates_metrics_txt} ${duplicates_metrics_result_directory}
     }
 
     runtime {

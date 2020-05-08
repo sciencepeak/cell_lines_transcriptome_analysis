@@ -1,1 +1,1 @@
-{"MyBestWorkflow.sorted_bam":"${this.sorted_bam}","MyBestWorkflow.htseq_count_txt":"${this.htseq_count_txt}"}
+{"MyBestWorkflow.sorted_bam":"${this.sorted_bam}","MyBestWorkflow.duplicates_metrics_txt":"${this.duplicates_metrics_txt}","MyBestWorkflow.htseq_count_txt":"${this.htseq_count_txt}"}
