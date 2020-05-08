@@ -28,8 +28,6 @@ inputs_workspace_text <- "
     hisat_index_file
     hisat_prefix
     ref_gtf
-    remove_unmapped_inline_single_end_script
-    remove_unmapped_inline_paired_end_script
     sorted_bam_result_directory
     htseq_count_result_directory
     "
