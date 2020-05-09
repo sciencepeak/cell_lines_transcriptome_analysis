@@ -145,11 +145,16 @@ task FastqToSam {
     String strandness_arg = if defined(strandness) then "--rna-strandness " + strandness + " " else ""
 
     command {
-        if [ "$single" = true ] ; then
-            files=$(echo "-U "${sep="," fastq_r1_list})
-        else
-            files=$(echo "-1 "${sep="," fastq_r1_list}" -2 "${sep="," fastq_r2_list})
+        if [[ "${single}" == true ]]
+            then
+                echo "The single end input is detected"
+                files=$(echo "-U "${sep="," fastq_r1_list})
+            else
+                echo "The paired end input is detected"
+                files=$(echo "-1 "${sep="," fastq_r1_list}" -2 "${sep="," fastq_r2_list})
         fi
+
+        echo the input file paths: $files
 
         /usr/local/bin/hisat2 -p 2 --dta -x ${hisat_prefix} ${strandness_arg} $files -S ${sample_name}.initially_mapped.sam
     }
@@ -216,7 +221,7 @@ task RemoveBothUnmappedMates {
     Int sam_flag_value = if single_end_attribute then 4 else 12
 
     command {
-        /usr/local/bin/samtools view -F $sam_flag_value -@ 2 -b -h -l 9 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}
+        /usr/local/bin/samtools view -F ${sam_flag_value} -@ 2 -b -h -l 9 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}
     }
 
     output {
@@ -264,7 +269,7 @@ task CallHtseqCount {
     command {
         # htseq-count [options] <alignment_files> <gff_file>
         # https://htseq.readthedocs.io/en/release_0.11.1/count.html
-        /usr/local/bin/htseq-count --fomat=bam ${strandness_arg} ${input_bam} ${gtf_annotation} > ${sample_name}.htseq_count.txt
+        /usr/local/bin/htseq-count --format=bam ${strandness_arg} ${input_bam} ${gtf_annotation} > ${sample_name}.htseq_count.txt
     }
 
     output {
