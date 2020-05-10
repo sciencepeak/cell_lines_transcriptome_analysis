@@ -221,7 +221,7 @@ task RemoveBothUnmappedMates {
     Int sam_flag_value = if single_end_attribute then 4 else 12
 
     command {
-        /usr/local/bin/samtools view -F ${sam_flag_value} -@ 2 -b -h -l 9 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}
+        /usr/local/bin/samtools view -F ${sam_flag_value} -@ 2 -b -h -1 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}
     }
 
     output {
