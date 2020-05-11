@@ -13,7 +13,7 @@ workflow MyBestWorkflow {
 
     # Handle single_ended or pair_ended?
     Boolean? single_ended
-    Boolean single_end_attribute = select_first([single_ended, false])
+    Boolean whether_single_end = select_first([single_ended, false])
 
     # Process input args: usually the library prepation for strandness is "RF".
     String? strandness
@@ -42,7 +42,7 @@ workflow MyBestWorkflow {
     call FastqToSam {
         input:
             fastq_list_files = StringToFile.fastq_list_files,
-            single = single_end_attribute,
+            single_end_argument = whether_single_end,
             sample_name = base_file_name,
             hisat_index = hisat_index,
             hisat_prefix = hisat_prefix,
@@ -65,7 +65,7 @@ workflow MyBestWorkflow {
         input:
             sample_name = base_file_name,
             input_bam = PicardMarkDuplicates.duplicates_removed_bam,
-            single_end_attribute = single_end_attribute
+            single_end_argument = whether_single_end
     }
 
     call BamToQuerynameSortedBam {
@@ -135,7 +135,7 @@ task FastqToSam {
     Array[File] fastq_r1_list = read_lines(fastq_list_files[0])
     Array[File]? fastq_r2_list = read_lines(fastq_list_files[1])
 
-    Boolean single
+    Boolean single_end_argument
     String sample_name
 
     Array[File]+ hisat_index
@@ -145,7 +145,7 @@ task FastqToSam {
     String strandness_arg = if defined(strandness) then "--rna-strandness " + strandness + " " else ""
 
     command {
-        if [[ "${single}" == true ]]
+        if [[ "${single_end_argument}" == true ]]
             then
                 echo "The single end input is detected"
                 files=$(echo "-U "${sep="," fastq_r1_list})
@@ -216,9 +216,9 @@ task RemoveBothUnmappedMates {
     String sample_name
     File input_bam
 
-    Boolean single_end_attribute
+    Boolean single_end_argument
 
-    Int sam_flag_value = if single_end_attribute then 4 else 12
+    Int sam_flag_value = if single_end_argument then 4 else 12
 
     command {
         /usr/local/bin/samtools view -F ${sam_flag_value} -@ 2 -b -h -1 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}

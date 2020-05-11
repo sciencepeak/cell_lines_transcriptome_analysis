@@ -57,6 +57,25 @@ batch_1_read_colsums <- colSums(batch_1_dataframe)
 batch_2_read_colsums <- colSums(batch_2_dataframe)
 ```
 
+
+```{r}
+batch_1_read_colsums
+```
+
+```{r}
+batch_2_read_colsums
+```
+
+
+```{r}
+hist(batch_1_read_colsums, breaks = 30)
+```
+
+
+```{r}
+hist(batch_2_read_colsums, breaks = 30)
+```
+
 # Some statistics test.
 
 ```{r}
@@ -81,9 +100,9 @@ my_comparisons <- list(c("batch_1", "batch_2"))
 
 my_plot <- ggplot(dataframe_to_plot,
                   aes(x = batch_group, y = read_colsum, color = batch_group)) +
-    geom_boxplot() +
-    geom_jitter(width = 0.25, na.rm = TRUE) +
-    stat_compare_means(comparisons = my_comparisons, method = "wilcox.test", var.equal = T) +
+    geom_boxplot(outlier.shape = NA) +
+    geom_jitter(width = 0.25) +
+    stat_compare_means(comparisons = my_comparisons, method = "wilcox.test") +
     ggtitle("Wilcoxon_rank_sum_test")
 
 ggsave(filename = output_graph_file_name,
