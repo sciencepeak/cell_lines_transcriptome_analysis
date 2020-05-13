@@ -23,6 +23,12 @@ library("limma")
 # library("gplots")
 ```
 
+# Understand batch effect
+
+![batch effect](diagrams/batch_effect.png)
+
+
+
 # Set up input and output files and directories.
 
 ```{r}
