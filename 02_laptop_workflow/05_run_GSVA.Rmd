@@ -73,7 +73,7 @@ Click on the link of the gene sets below to download the current version of gene
 
 ```{r}
 # Inputs
-compression_file_path <- file.path(getwd(), "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
+compression_file_path <- file.path(getwd(), "intermediate_files", "gene_expression_matrix.log2_cpm.csv.bz2")
 
 gene_sets_input_directory <- file.path(getwd(), "MSigDB_gene_sets") %T>%
     dir.create(., showWarnings = F, recursive = T)
@@ -87,13 +87,14 @@ gene_sets_ouput_directory <-
 # Inputs options and parameter settings
 
 ```{r}
-
-# Specify the attributes of the input data.
 input_data_type <- c("microarray", "rna_seq")[2]
+gsva_input_preference <- c("log2_cpm", "raw_count")[1]
+whether_normalized <- TRUE
+whether_logarithmized <- TRUE
+```
 
-whether_normalized <- FALSE
-whether_logarithmized <- FALSE
 
+```{r}
 # As for normalization, there is only normalized (microarray or RNA-seq) or raw count (RNA-seq or microarray)
 if (input_data_type == "rna_seq") {
     print("Is the expression matrix containing raw counts or normalized values?")
@@ -104,11 +105,11 @@ if (input_data_type == "microarray") {
     whether_normalized <- TRUE
 }
 
-if (input_data_type == "microarray" | whether_normalized == TRUE | whether_logarithmized == TRUE) {
+if (input_data_type == "microarray") {
     warning("The code of this situation is written by imagination, so it is not tested with data.")
 }
 
-if (input_data_type == "rna_seq" | whether_normalized == FALSE | whether_logarithmized == FALSE) {
+if (input_data_type == "rna_seq") {
     print("The code of this situation is written and tested by data.")
 }
 ```
@@ -145,7 +146,7 @@ gene_sets_list <- gene_sets_input_directory %>%
 expression_dataframe <- read.csv(compression_file_path, row.names = 1, check.names = F)
 ```
 
-# normaization and logarithmization
+# normaization and logarithmization to generate a new expression dataframe anyway.
 
 ```{r}
 if (whether_normalized == FALSE & whether_logarithmized == FALSE) {
@@ -158,12 +159,10 @@ if (whether_normalized == FALSE & whether_logarithmized == FALSE) {
 }
 
 if (whether_normalized == TRUE & whether_logarithmized == FALSE) {
-    warning("The code of this situation is written by imagination, so it is not tested with data.")
     normalized_expression_dataframe <- log2(expression_dataframe + 0.01)
 }
 
 if (whether_normalized == TRUE & whether_logarithmized == TRUE) {
-    warning("The code of this situation is written by imagination, so it is not tested with data.")
     normalized_expression_dataframe <- expression_dataframe
 }
 
@@ -172,7 +171,7 @@ if (whether_normalized == FALSE & whether_logarithmized == TRUE) {
 }
 ```
 
-# apply filters
+# Apply filters to the normalized and logarithmized gene expression dataframe
 
 ```{r}
 # Calculate the Interquartile Range (IQR), which is used to remove outliers.
@@ -195,9 +194,19 @@ normalized_expression_dataframe <- normalized_expression_dataframe[normalized_ex
 # The threshold for base-2 logarithmized CPM is 0.
 normalized_expression_dataframe <- normalized_expression_dataframe[normalized_expression_dataframe$max_expression >= 0, ]
 
+normalized_expression_dataframe$IQR <- NULL
+normalized_expression_dataframe$max_expression <- NULL
+```
+
+# We have two kinds of filtered gene expression dataframe to proceed
+
+```{r}
 # The above filters can only be used on the normalized and logarithmized expression dataframe.
 # After fitler application, the raw count expression dataframe is still preferred by the GSVA package.
-filtered_raw_expression_dataframe <- expression_dataframe[rownames(normalized_expression_dataframe), ]
+filtered_raw_count_expression_dataframe <- expression_dataframe[rownames(normalized_expression_dataframe), ]
+
+# But we still have the filtered normalized logarithmized gene expression dataframe
+filtered_log2_cpm_expression_dataframe <- normalized_expression_dataframe
 ```
 
 ***
@@ -207,17 +216,15 @@ filtered_raw_expression_dataframe <- expression_dataframe[rownames(normalized_ex
 ```{r}
 accumulation_list <- list()
 for (gene_sets_name in gene_sets_names) {
-    
     # estimate GSVA enrichment scores
-    if (whether_normalized == TRUE) {
+    if (gsva_input_preference == "log2_cpm") {
 	    # If the input is microarray data (inherently normalized) or normalized RNA-seq data, then normal distribution is used.
-        warning("The code of this situation is written by imagination, so it is not tested with data.")
-	    gsva_table <- normalized_expression_dataframe %>%
+	    gsva_table <- filtered_log2_cpm_expression_dataframe %>%
 	        as.matrix %>%
 	        gsva(., gene_sets_list[[gene_sets_name]], min.sz=10, max.sz=500, kcdf="Gaussian", verbose=FALSE)
     } else {
 	    # if the input is the RNA-seq raw count data, then Poisson distribution is used.
-	    gsva_table <- filtered_raw_expression_dataframe %>%
+	    gsva_table <- filtered_raw_count_expression_dataframe %>%
 	        as.matrix %>%
 	        gsva(., gene_sets_list[[gene_sets_name]], min.sz=10, max.sz=500, kcdf="Poisson", verbose=FALSE)
     }

@@ -20,6 +20,7 @@ library("magrittr")
 library("readxl")
 library("edgeR")
 library("limma")
+library("R.utils")
 # library("gplots")
 ```
 
@@ -33,9 +34,10 @@ library("limma")
 
 ```{r}
 grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
-expression_path <- file.path(".", "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
+expression_path <- file.path(".", "intermediate_files", "gene_expression_matrix.raw_count.csv.bz2")
 
 output_directory <- file.path(".", "intermediate_files")
+output_csv_file_name <- "gene_expression_matrix.log2_cpm.csv"
 ```
 
 # Read the files from hard disk.
@@ -48,7 +50,7 @@ grouping_dataframe <- read_excel(grouping_path)
 # Normalization using cpm funcion in edgeR package
 
 ```{r}
-normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T)
+normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T, prior.count = 0.01)
 ```
 
 # Remove batch effect using removeBatchEffect function in limma package
@@ -108,7 +110,26 @@ temporary_expression_dataframe$IQR <-  NULL
 
 # Remove the outlier
 temporary_expression_dataframe[, "M238-CTRL-1hr"] <- NULL
+```
 
+
+```{r}
+write.csv(temporary_expression_dataframe,
+          file = output_csv_file_name,
+          quote = F,
+          row.names = T)
+
+output_compressed_file_name <- bzip2(output_csv_file_name, compression = 9, overwrite = T)[1]
+output_compressed_file_name
+
+file.rename(from = output_compressed_file_name,
+            to = file.path(output_directory, output_compressed_file_name))
+```
+
+
+# PCA analysis
+
+```{r}
 ##remove IQR and max column, choose the top 5000 genes based on IQR
 temporary_expression_dataframe_top_5000 <- temporary_expression_dataframe[1:5000, ]
 ```

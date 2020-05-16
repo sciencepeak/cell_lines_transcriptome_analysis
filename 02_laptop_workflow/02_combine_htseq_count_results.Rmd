@@ -17,13 +17,13 @@ Then, the expression matrix is cleaned. Ensembl gene ids are converted into hgnc
 
 ## Environment setup.
 
-```{r environment-setup}
+```{r message=F, warning=F}
 rm(list = ls())
 ptm <- proc.time()
 # proc.time() - ptm
 options(stringsAsFactors = F)
-library("magrittr")
 library("R.utils")
+library("magrittr")
 ```
 
 # Set up input files, directories, and parameters
@@ -47,11 +47,11 @@ current_format <- "HTSeq"
 # Set up output files and directories.
 
 ```{r outputs}
-output_subdirectory <- file.path(getwd(), "intermediate_files") %T>%
+output_directory <- file.path(getwd(), "intermediate_files") %T>%
     dir.create(., showWarnings = F, recursive = T)
 
 # We can compress the output text file to save hard disk space.
-output_csv_file_name <- "htseq_count_expression_matrix.csv"
+output_csv_file_name <- "gene_expression_matrix.raw_count.csv"
 ```
 
 # Merge gene expression values per sample per file into a gene expression matrix.
@@ -147,7 +147,7 @@ output_compressed_file_name <- bzip2(output_csv_file_name, compression = 9, over
 output_compressed_file_name
 
 file.rename(from = output_compressed_file_name,
-            to = file.path(output_subdirectory, output_compressed_file_name))
+            to = file.path(output_directory, output_compressed_file_name))
 ```
 
 ```{r output-relocation}
