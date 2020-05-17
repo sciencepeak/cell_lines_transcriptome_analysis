@@ -45,16 +45,11 @@ library("R.utils")
 You need to run this chunk twice to generate the hg19 and hg38 conversion tables, respectively.
 
 ```{r}
-# genome_version <- c("hg19", "hg38")[1]
 genome_version <- c("hg19", "hg38")[2]
 ```
 
 
 ```{r}
-# GTF file manipulation options
-whether_need_download_now <- TRUE
-whether_already_compressed <- TRUE
-
 hg19_download_link <- "ftp://ftp.ensembl.org/pub/grch37/release-99/gtf/homo_sapiens/Homo_sapiens.GRCh37.87.gtf.gz"
 hg38_download_link <- "ftp://ftp.ensembl.org/pub/release-99/gtf/homo_sapiens/Homo_sapiens.GRCh38.99.gtf.gz"
 
@@ -63,19 +58,17 @@ gtf_download_link <- switch(genome_version,
                             "hg38" = hg38_download_link)
 gtf_download_link
 
-compressed_gtf_file_name <- basename(gtf_download_link)
-compressed_gtf_file_name
+gtf_file_name <- basename(gtf_download_link)
+gtf_file_name
 
-uncompressed_gtf_file_name <- file_path_sans_ext(compressed_gtf_file_name)
-uncompressed_gtf_file_name
+whether_gtf_downloaded <- file.exists(gtf_file_name)
+whether_gtf_downloaded
 ```
 
 # Output files and directories
 
 ```{r}
-# output:
-
-output_subdirectory <- file.path(getwd(), "intermediate_files") %T>%
+output_directory <- file.path(getwd(), "intermediate_files") %T>%
   dir.create(., showWarnings = F, recursive = T)
 
 output_base_name <- paste("ensemble_hgnc_conversion_table", genome_version, sep = ".")
@@ -85,23 +78,24 @@ output_text_file_name <- paste(output_base_name, "txt", sep = ".")
 output_text_file_name
 ```
 
-```{r read-input-file}
-if (whether_need_download_now == TRUE) {
-    download.file(url = gtf_download_link,
-                  destfile = compressed_gtf_file_name,
-                  method = "internal")
-}
-
 # You don't have to decompress the gz file to proceed.
-# R added transparent decompression for certain kinds of compressed files in the latest version (2.10).
-# If you have your files compressed with bzip2, xvz, or gzip,
-# they can be read into R as if they are plain text files.
-# You should have the proper filename extensions and specify the column types or classes.
-if (whether_already_compressed == TRUE) {
-    path_to_input_file <- compressed_gtf_file_name
+
+R added transparent decompression for certain kinds of compressed files in the latest version (2.10).
+If you have your files compressed with bzip2, xvz, or gzip, they can be read into R as if they are plain text files.
+You should have the proper filename extensions and specify the column types or classes.
+
+```{r read-input-file}
+if (whether_gtf_downloaded == FALSE) {
+    download.file(url = gtf_download_link,
+                  destfile = gtf_file_name,
+                  method = "internal")
 } else {
-    path_to_input_file <- uncompressed_gtf_file_name
+    cat(gtf_file_name, "has already been downloaded to the working directory", sep = " ", "\n")
 }
+```
+
+```{r}
+path_to_input_file <- gtf_file_name
 
 # c stands for character type. Take all 9 columns as character.
 column_type_list <- rep("c", times = 9) %>%
@@ -114,7 +108,7 @@ raw_gtf_table <- path_to_input_file %>%
     set_colnames(.,  c("seqname", "source", "feature", "start", "end", "score", "strand", "frame", "attribute"))
 
 # Delete input gtf file.
-unlink(path_to_input_file)
+# unlink(path_to_input_file)
 ```
 
 
@@ -142,15 +136,16 @@ output_dataframe <- data.frame(ensembl_gene_id = ensembl_gene_ids,
 ```
 
 
-```{r write-output-file}
 # Output the conversion table of ensembl gene ids and the hgnc symbols.
+
+```{r}
 write.table(output_dataframe, sep = "\t", file = output_text_file_name, quote = F, row.names = F)
 
 output_compressed_file_name <- bzip2(output_text_file_name, compression = 9, overwrite = T)[1]
 output_compressed_file_name
 
 file.rename(from = output_compressed_file_name,
-            to = file.path(output_subdirectory, output_compressed_file_name))
+            to = file.path(output_directory, output_compressed_file_name))
 ```
 
 

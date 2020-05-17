@@ -61,10 +61,17 @@ workflow MyBestWorkflow {
             input_bam = SamToCoordinateSortedBam.coordinate_sorted_bam
     }
 
+    call RemoveBothUnmappedMates {
+        input:
+            sample_name = base_file_name,
+            input_bam = PicardMarkDuplicates.duplicates_removed_bam,
+            single_end_argument = whether_single_end
+    }
+
     call BamToQuerynameSortedBam {
         input:
             sample_name = base_file_name,
-            input_bam = PicardMarkDuplicates.duplicates_removed_bam
+            input_bam = RemoveBothUnmappedMates.both_unmapped_mates_removed_bam
     }
 
     call CallHtseqCount {
@@ -202,6 +209,30 @@ task PicardMarkDuplicates {
         disks: "local-disk 500 SSD"
         memory: "13G"
         cpu: 2
+    }
+}
+
+task RemoveBothUnmappedMates {
+    String sample_name
+    File input_bam
+
+    Boolean single_end_argument
+
+    Int sam_flag_value = if single_end_argument then 4 else 12
+
+    command {
+        /usr/local/bin/samtools view -F ${sam_flag_value} -@ 2 -b -h -1 -o ${sample_name}.both_unmapped_mates_removed.bam ${input_bam}
+    }
+
+    output {
+        File both_unmapped_mates_removed_bam = "${sample_name}.both_unmapped_mates_removed.bam"
+    }
+
+    runtime {
+        memory: "13G"
+        cpu: 2
+        disks: "local-disk 500 SSD"
+        docker: "zlskidmore/samtools:latest"
     }
 }
 
