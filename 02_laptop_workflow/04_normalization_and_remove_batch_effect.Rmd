@@ -57,7 +57,7 @@ grouping_hash <- hash(keys = grouping_dataframe$File, values = grouping_datafram
 # Normalization using cpm funcion in edgeR package
 
 ```{r}
-# normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T, prior.count = 0.01)
+# normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T, prior.count = 0.001)
 normalized_expression_matrix <- raw_expression_dataframe %>%
     DGEList %>%
     calcNormFactors %>%
