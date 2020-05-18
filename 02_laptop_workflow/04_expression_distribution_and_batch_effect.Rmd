@@ -1,0 +1,213 @@
+---
+title: "Summarize the HTSeq-count result files"
+author: "Author: Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Usage introduction
+
+```{r warning=F, message=F}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("magrittr")
+library("readxl")
+library("ggplot2")
+library("ggpubr")
+library("ggfortify")
+library("tibble")
+library("hash")
+library("rgl")
+```
+
+# Understand batch effect
+
+![batch effect](diagrams/batch_effect.png)
+
+# Set up input and output files and directories.
+
+```{r}
+grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
+
+raw_count_path <- file.path(".", "intermediate_files", "expression_matrix.raw_count.csv.bz2")
+log2_cpm_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.csv.bz2")
+log2_cpm_BE_removed_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.csv.bz2")
+log2_cpm_BE_removed_filtered_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.filtered.csv.bz2")
+
+input_file_names <- c("raw_count", "log2_cpm", "log2_cpm.BE_removed", "log2_cpm.BE_removed.filtered")
+
+output_directory <- file.path(".", "intermediate_files")
+
+output_graph_base_name <- "batch_effect"
+```
+
+# Read the files from hard disk.
+
+```{r}
+expression_dataframe_list <- c(raw_count_path, log2_cpm_path, log2_cpm_BE_removed_path, log2_cpm_BE_removed_filtered_path) %>%
+    set_names(., value = input_file_names) %>%
+    lapply(., read.csv, row.names = 1, check.names = F)
+
+grouping_dataframe <- read_excel(grouping_path)
+grouping_hash <- hash::hash(keys = grouping_dataframe$File, values = grouping_dataframe$Batch)
+```
+
+
+# Calculate the statistical values for samples for different gene expression matrices.
+
+```{r}
+get_long_dataframe <- function(an_expression_dataframe, factor_dataframe, statistical_function) {
+    
+    # an_expression_dataframe<- raw_expression_dataframe
+    # factor_dataframe <- grouping_dataframe
+    # statistical_function <- sum
+    batch_1_column_names <- factor_dataframe %$%
+        subset(., Batch == 1) %>%
+        use_series(., File)
+    batch_2_column_names <- factor_dataframe %$%
+        subset(., Batch == 2) %>%
+        use_series(., File)
+
+    batch_1_dataframe <- an_expression_dataframe %$%
+        .[, colnames(.) %in% batch_1_column_names]
+    batch_2_dataframe <- an_expression_dataframe %$%
+        .[, colnames(.) %in% batch_2_column_names]
+
+    batch_1_read_statistics <- apply(batch_1_dataframe, 2, statistical_function)
+    batch_2_read_statistics <- apply(batch_2_dataframe, 2, statistical_function)
+
+    # Probably not all normal distribution.
+    shapiro.test(batch_1_read_statistics)
+    shapiro.test(batch_2_read_statistics)
+
+    # Some statistics test.
+    var.test(batch_1_read_statistics, batch_2_read_statistics)
+    wilcox.test(batch_1_read_statistics, batch_2_read_statistics)
+    
+    # make a long dataframe to apply ggplot2 graphics
+    dataframe_to_plot <- data.frame(
+        statistic_value = c(batch_1_read_statistics, batch_2_read_statistics),
+        batch_group = c(rep("batch_1", times = length(batch_1_read_statistics)),
+                        rep("batch_2", times = length(batch_2_read_statistics)))
+    )
+}
+
+# Convert each expression matrx to long dataframe with different statistic values calculated.
+raw_count_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["raw_count"]], grouping_dataframe, sum)
+
+log2_cpm_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["log2_cpm"]], grouping_dataframe, median)
+
+log2_cpm_BE_removed_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_removed"]], grouping_dataframe, median)
+
+log2_cpm_BE_removed_filtered_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_removed.filtered"]], grouping_dataframe, median)
+```
+
+# Plot jitter boxplots to see the batch affect.
+
+```{r}
+plot_dataframe_list <- list(raw_count.colsums = raw_count_long_dataframe,
+                            log2_cpm.medians = log2_cpm_long_dataframe,
+                            log2_cpm.BE_removed.medians = log2_cpm_BE_removed_long_dataframe,
+                            log2_cpm.BE_removed.filtered.medians = log2_cpm_BE_removed_filtered_long_dataframe)
+my_comparisons <- list(c("batch_1", "batch_2"))
+
+for (i in names(plot_dataframe_list)) {
+    my_plot <- ggplot(plot_dataframe_list[[i]], aes(x = batch_group, y = statistic_value, color = batch_group)) +
+        geom_boxplot(outlier.shape = NA) +
+        geom_jitter(width = 0.25) +
+        stat_compare_means(comparisons = my_comparisons, method = "wilcox.test") +
+        ggtitle("Wilcoxon_rank_sum_test") +
+        ylab(i)
+    
+    ggsave(filename = paste(output_graph_base_name, i, "pdf", sep = "."),
+           plot = my_plot,
+           device = "pdf",
+           path = output_directory,
+           width = 170,
+           height = 170,
+           units = "mm")
+
+my_plot
+}
+```
+
+# PCA analysis
+
+```{r}
+# choose the top 5000 genes based on IQR
+# PCA wants transposed gene expression matrix, namely samples x genes.
+transposed_dataframe <- expression_dataframe_list[["log2_cpm.BE_removed.filtered"]] %>%
+    .[1:5000, ] %>%
+    t %>%
+    as.data.frame
+
+# Create another first column to act as batch factors for later grouping or labelling.
+labelled_dataframe <- rownames_to_column(transposed_dataframe, var = "Batch") %>%
+    inset(., "Batch", value = as.factor(hash::values(grouping_hash, keys = .$Batch)))
+```
+
+
+# Perform PCA and draw with ggplot2 graphics
+
+[](https://aaronschlegel.me/principal-component-analysis-r-example.html)
+
+[](https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html)
+
+
+```{r}
+# The labelling/grouping column should be excluded in pca, but included in later plotting.
+pca_result <- prcomp(labelled_dataframe[, -1], scale. = T)
+# str(pca_result)
+
+pca_plot <- autoplot(pca_result, data = labelled_dataframe, colour = "Batch")
+
+ggsave(filename = paste(output_graph_base_name, "pca_analysis", "pdf", sep = "."),
+       plot = pca_plot,
+       device = "pdf",
+       path = output_directory,
+       width = 170,
+       height = 170,
+       units = "mm")
+pca_plot
+```
+
+# Perform PCA and plot using base graphics
+
+```{r}
+## the PCA computation, use scaling
+pca.res<-prcomp(labelled_dataframe[, -1],scale.=T,retx=T)
+pc.var<-pca.res$sdev^2
+
+#percentage of variance explained 
+pc.per<-round(pc.var/sum(pc.var)*100, 1)
+x<-as.data.frame(pca.res$x)
+
+plot.default(x$PC1,x$PC2,type="p",pch=c(21),
+             bg=c("red","black")[labelled_dataframe$Batch],
+             col="white",
+             lwd=2,cex=2.5,xaxs="r",yaxs="r",bty="l",
+             cex.axis=1,cex.main=1,cex.lab=1,font.lab=2,font.axis=2)
+```
+
+# draw 3D PCA using package rgl
+
+```{r eval = FALSE, echo = FALSE}
+plot3d(x$PC1,x$PC2,x$PC3,type="s",col=c("red","black")[labelled_dataframe$Batch],size=2)
+grid3d("x")
+grid3d("y+")
+grid3d("z")
+rgl.snapshot(file.path(output_directory, paste(output_graph_base_name, "3D_PCA", "png", sep = ".")))
+```
+
+```{r}
+proc.time() - ptm
+```
+
