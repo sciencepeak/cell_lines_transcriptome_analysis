@@ -21,6 +21,10 @@ library("readxl")
 library("edgeR")
 library("limma")
 library("R.utils")
+library("ggfortify")
+library("tibble")
+library("hash")
+library("rgl")
 # library("gplots")
 ```
 
@@ -38,6 +42,7 @@ expression_path <- file.path(".", "intermediate_files", "gene_expression_matrix.
 
 output_directory <- file.path(".", "intermediate_files")
 output_csv_file_name <- "gene_expression_matrix.log2_cpm.csv"
+output_3D_PCA_graph_name <- "3D_PCA_graph.png"
 ```
 
 # Read the files from hard disk.
@@ -45,19 +50,27 @@ output_csv_file_name <- "gene_expression_matrix.log2_cpm.csv"
 ```{r}
 raw_expression_dataframe <- read.csv(expression_path, row.names = 1, check.names = F)
 grouping_dataframe <- read_excel(grouping_path)
+
+grouping_hash <- hash(keys = grouping_dataframe$File, values = grouping_dataframe$Batch)
 ```
 
 # Normalization using cpm funcion in edgeR package
 
 ```{r}
-normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T, prior.count = 0.01)
+# normalized_expression_matrix <- cpm(raw_expression_dataframe, log = T, prior.count = 0.01)
+normalized_expression_matrix <- raw_expression_dataframe %>%
+    DGEList %>%
+    calcNormFactors %>%
+    cpm(., normalized.lib.sizes=TRUE, prior.count=0.001, log=TRUE)
 ```
 
 # Remove batch effect using removeBatchEffect function in limma package
 
 ```{r}
+batch_factor_vector <- values(grouping_hash, keys = colnames(normalized_expression_matrix))
 batch_effect_removed_normalized_expression_matrix <-
-    removeBatchEffect(normalized_expression_matrix, batch = grouping_dataframe$Batch)
+    removeBatchEffect(normalized_expression_matrix, batch = batch_factor_vector)
+
 ```
 
 # Remove weird genes such as pseudogenes and unconfirmed genes.
@@ -97,7 +110,7 @@ temporary_expression_dataframe <- corrected_expression_dataframe
 temporary_expression_dataframe$IQR <- apply(corrected_expression_dataframe, 1, IQR)
 temporary_expression_dataframe$max <- apply(corrected_expression_dataframe, 1, max)
 
-#sort by IQR
+#sort by IQR, because we are more interested in higher variance genes
 temporary_expression_dataframe <- temporary_expression_dataframe %>%
     .[order(.$IQR, decreasing=T), ]
 
@@ -107,8 +120,11 @@ temporary_expression_dataframe <- temporary_expression_dataframe[temporary_expre
 
 temporary_expression_dataframe$max <- NULL
 temporary_expression_dataframe$IQR <-  NULL
+```
 
 # Remove the outlier
+
+```{r}
 temporary_expression_dataframe[, "M238-CTRL-1hr"] <- NULL
 ```
 
@@ -131,14 +147,35 @@ file.rename(from = output_compressed_file_name,
 
 ```{r}
 ##remove IQR and max column, choose the top 5000 genes based on IQR
-temporary_expression_dataframe_top_5000 <- temporary_expression_dataframe[1:5000, ]
+transposed_dataframe <- temporary_expression_dataframe[1:5000, ] %>%
+    t %>%
+    as.data.frame
+labelled_dataframe <- rownames_to_column(transposed_dataframe, var = "Batch") %>%
+    inset(., "Batch", value = as.factor(values(grouping_hash, keys = .$Batch)))
 ```
 
-# PCA computation
+
+# PCA plot using ggplot2 graphics
+
+https://aaronschlegel.me/principal-component-analysis-r-example.html
+
+https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
+
+
+```{r}
+pca_result <- prcomp(labelled_dataframe[, -1], scale. = T)
+str(pca_result)
+pca_plot <- autoplot(pca_result, data = labelled_dataframe, colour = "Batch")
+pca_plot
+```
+
+
+
+# PCA plot using base graphics
 
 ```{r}
 ## the PCA computation, use scaling
-pca.res<-prcomp(t(temporary_expression_dataframe_top_5000),scale.=T,retx=T)
+pca.res<-prcomp(labelled_dataframe[, -1],scale.=T,retx=T)
 pc.var<-pca.res$sdev^2
 
 #percentage of variance explained 
@@ -146,12 +183,21 @@ pc.per<-round(pc.var/sum(pc.var)*100, 1)
 x<-as.data.frame(pca.res$x)
 
 plot.default(x$PC1,x$PC2,type="p",pch=c(21),
-             bg="red",
+             bg=c("red","black")[labelled_dataframe$Batch],
              col="white",
              lwd=2,cex=2.5,xaxs="r",yaxs="r",bty="l",
              cex.axis=1,cex.main=1,cex.lab=1,font.lab=2,font.axis=2)
 ```
 
+# 3D PCA using package rgl
+
+```{r}
+plot3d(x$PC1,x$PC2,x$PC3,type="s",col=c("red","black")[labelled_dataframe$Batch],size=2)
+grid3d("x")
+grid3d("y+")
+grid3d("z")
+rgl.snapshot(file.path(output_directory, output_3D_PCA_graph_name))
+```
 
 
 ```{r}
