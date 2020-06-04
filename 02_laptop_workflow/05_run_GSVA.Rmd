@@ -33,6 +33,8 @@ library("tidyr")
 library("GSVA")
 library("GSVAdata")
 library("edgeR")
+library("R.utils")
+library("tibble")
 ```
 
 # Gene sets in Molecular Signatures Database (MSigDB)
@@ -79,8 +81,8 @@ gene_sets_input_directory <- file.path(getwd(), "MSigDB_gene_sets") %T>%
     dir.create(., showWarnings = F, recursive = T)
 
 # Outputs
-gene_sets_ouput_directory <-
-    file.path(getwd(), "intermediate_files", "gene_sets_ouput_directory") %T>%
+output_file <- "merged_gsva_result.csv"
+output_directory <- file.path(".", "intermediate_files") %T>%
     dir.create(., showWarnings = F, recursive = T)
 ```
 
@@ -91,6 +93,7 @@ input_data_type <- c("microarray", "rna_seq")[2]
 gsva_input_preference <- c("log2_cpm", "raw_count")[1]
 whether_normalized <- TRUE
 whether_logarithmized <- TRUE
+round_digit <- 3 # round the final dataframe
 ```
 
 
@@ -228,19 +231,40 @@ for (gene_sets_name in gene_sets_names) {
 	        as.matrix %>%
 	        gsva(., gene_sets_list[[gene_sets_name]], min.sz=10, max.sz=500, kcdf="Poisson", verbose=FALSE)
     }
-    accumulation_list[[gene_sets_name]] <- gsva_table
+    accumulation_list[[gene_sets_name]] <- as.data.frame(gsva_table)
 }
 ```
+
+# Combine the gsva result.
 
 # Write gsva results to the hard disk
 
 ```{r}
+signature_list <- list()
+
 for(i_name in names(accumulation_list)) {
-    write.csv(accumulation_list[[i_name]],
-              file = file.path(gene_sets_ouput_directory, paste(i_name, "csv", sep = ".")),
-              quote = F)
+    current_dataframe <- accumulation_list[[i_name]] %>%
+        round(., digits = round_digit) %>%
+        rownames_to_column(., var = "gene_set") %>%
+        add_column(.data = ., signature = i_name, .before = 1)
+    signature_list[[i_name]] <- current_dataframe
+
 }
+
+final_combined_dataframe <- do.call(rbind, signature_list)
+
+write.csv(final_combined_dataframe,
+          file = output_file,
+          row.names = F, quote = F)
+
+output_compressed_file_name <- bzip2(output_file, compression = 9, overwrite = T)[1]
+
+file.rename(from = output_compressed_file_name,
+                to = file.path(output_directory, output_compressed_file_name))
+
 ```
+
+
 
 # how to analyze gsva result?
 
