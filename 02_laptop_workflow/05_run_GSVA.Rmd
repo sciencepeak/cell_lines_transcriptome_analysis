@@ -246,7 +246,7 @@ for(i_name in names(accumulation_list)) {
     current_dataframe <- accumulation_list[[i_name]] %>%
         round(., digits = round_digit) %>%
         rownames_to_column(., var = "gene_set") %>%
-        add_column(.data = ., signature = i_name, .before = 1)
+        add_column(.data = ., signature_set = i_name, .before = 1)
     signature_list[[i_name]] <- current_dataframe
 
 }
