@@ -3,11 +3,13 @@ title: "A good title to conceive"
 author: "Author: Vegetable Bird"
 date: "`r format(Sys.time(), '%F')`"
 output:
-  html_document:
-    df_print: paged
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
 ---
 
-# Usage introduction
+# Initial environment settings
 
 ```{r warning=F, message=F}
 rm(list = ls())
@@ -20,13 +22,14 @@ library("ggplot2")
 library("ggpubr")
 library("ggfortify")
 library("tibble")
+library("ggrepel")
 library("hash")
 library("rgl")
 ```
 
 # Understand batch effect
 
-![batch effect](diagrams/batch_effect.png)
+![batch effect](diagrams_and_documents/batch_effect.png)
 
 # Set up input and output files and directories.
 
@@ -38,26 +41,36 @@ log2_cpm_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cp
 log2_cpm_BE_removed_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.csv.bz2")
 log2_cpm_BE_removed_filtered_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.filtered.csv.bz2")
 
-input_file_names <- c("raw_count", "log2_cpm", "log2_cpm.BE_removed", "log2_cpm.BE_removed.filtered")
+box_plot_output_directory <- file.path(".", "intermediate_files", "batch_effect_box_plots") %T>%
+    dir.create(., showWarnings = F, recursive = T)
 
-output_directory <- file.path(".", "intermediate_files")
+pca_plot_output_directory <- file.path(".", "intermediate_files", "batch_effect_pca_plots") %T>%
+    dir.create(., showWarnings = F, recursive = T)
+```
 
-output_graph_base_name <- "batch_effect"
+# Combine the possible conditions that will be plotted.
+
+```{r}
+manipulation_genres <- c("raw_count", "log2_cpm", "log2_cpm.BE_removed", "log2_cpm.BE_removed.filtered")
+label_genres <- c("labelled", "unlabelled")
+manipulation_label_grid_dataframe <- expand.grid(manipulation = manipulation_genres, label = label_genres)
+manipulation_label_grid_dataframe
 ```
 
 # Read the files from hard disk.
 
 ```{r}
 expression_dataframe_list <- c(raw_count_path, log2_cpm_path, log2_cpm_BE_removed_path, log2_cpm_BE_removed_filtered_path) %>%
-    set_names(., value = input_file_names) %>%
+    set_names(., value = manipulation_genres) %>%
     lapply(., read.csv, row.names = 1, check.names = F)
 
 grouping_dataframe <- read_excel(grouping_path)
 grouping_hash <- hash::hash(keys = grouping_dataframe$File, values = grouping_dataframe$Batch)
 ```
 
-
 # Calculate the statistical values for samples for different gene expression matrices.
+
+Get the long dataframes to draw box plots.
 
 ```{r}
 get_long_dataframe <- function(an_expression_dataframe, factor_dataframe, statistical_function) {
@@ -110,7 +123,7 @@ log2_cpm_BE_removed_filtered_long_dataframe <-
     get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_removed.filtered"]], grouping_dataframe, median)
 ```
 
-# Plot jitter boxplots to see the batch affect.
+# Plot jitter box plots to see the batch affect.
 
 ```{r}
 plot_dataframe_list <- list(raw_count.colsums = raw_count_long_dataframe,
@@ -119,64 +132,116 @@ plot_dataframe_list <- list(raw_count.colsums = raw_count_long_dataframe,
                             log2_cpm.BE_removed.filtered.medians = log2_cpm_BE_removed_filtered_long_dataframe)
 my_comparisons <- list(c("batch_1", "batch_2"))
 
-for (i in names(plot_dataframe_list)) {
-    my_plot <- ggplot(plot_dataframe_list[[i]], aes(x = batch_group, y = statistic_value, color = batch_group)) +
+for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
+    current_manipulation <- manipulation_label_grid_dataframe[i, "manipulation"]
+    current_labelling <- manipulation_label_grid_dataframe[i, "label"]
+    current_long_dataframe <- plot_dataframe_list[[current_manipulation]]
+    
+    my_plot <- ggplot(current_long_dataframe,
+                      aes(x = batch_group, y = statistic_value, color = batch_group)) +
         geom_boxplot(outlier.shape = NA) +
-        geom_jitter(width = 0.25) +
+        geom_jitter(width = 0.2) +
         stat_compare_means(comparisons = my_comparisons, method = "wilcox.test") +
         ggtitle("Wilcoxon_rank_sum_test") +
-        ylab(i)
+        ylab(current_manipulation)
     
-    ggsave(filename = paste(output_graph_base_name, i, "pdf", sep = "."),
-           plot = my_plot,
+    
+    if (current_labelling == "unlabelled") {
+        final_boxplot <- my_plot
+    } else {
+        # Add labels to the data points
+        final_boxplot <- my_plot +
+            geom_text_repel(data = subset(current_long_dataframe, batch_group == "batch_1"),
+                            aes(label = rownames(subset(current_long_dataframe, batch_group == "batch_1"))),
+                            direction = "y", nudge_x = -0.5,
+                            color = "black",
+                            size = 2, segment.size = 0.25, segment.alpha = 0.5) +
+            geom_text_repel(data = subset(current_long_dataframe, batch_group == "batch_2"),
+                            aes(label = rownames(subset(current_long_dataframe, batch_group == "batch_2"))),
+                            direction = "y", nudge_x = 0.5,
+                            color = "black",
+                            size = 2, segment.size = 0.25, segment.alpha = 0.5) +
+            theme(legend.position = "none")
+    }
+    
+    ggsave(filename = paste("batch_effect", current_manipulation, current_labelling, "pdf", sep = "."),
+           plot = final_boxplot,
            device = "pdf",
-           path = output_directory,
+           path = box_plot_output_directory,
            width = 170,
            height = 170,
            units = "mm")
-
-my_plot
+    Sys.sleep(1)
 }
-```
 
-# PCA analysis
-
-```{r}
-# choose the top 5000 genes based on IQR
-# PCA wants transposed gene expression matrix, namely samples x genes.
-transposed_dataframe <- expression_dataframe_list[["log2_cpm.BE_removed.filtered"]] %>%
-    .[1:5000, ] %>%
-    t %>%
-    as.data.frame
-
-# Create another first column to act as batch factors for later grouping or labelling.
-labelled_dataframe <- rownames_to_column(transposed_dataframe, var = "Batch") %>%
-    inset(., "Batch", value = as.factor(hash::values(grouping_hash, keys = .$Batch)))
 ```
 
 
 # Perform PCA and draw with ggplot2 graphics
 
-[](https://aaronschlegel.me/principal-component-analysis-r-example.html)
+https://aaronschlegel.me/principal-component-analysis-r-example.html
 
-[](https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html)
+https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
 
+https://cran.r-project.org/web/packages/ggrepel/vignettes/ggrepel.html#options
+
+sort by IQR, because we are more interested in higher variance genes. choose the top 5000 genes based on IQR. 
 
 ```{r}
-# The labelling/grouping column should be excluded in pca, but included in later plotting.
-pca_result <- prcomp(labelled_dataframe[, -1], scale. = T)
-# str(pca_result)
+for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
+    
+    current_manipulation <- manipulation_label_grid_dataframe[i, "manipulation"]
+    current_labelling <- manipulation_label_grid_dataframe[i, "label"]
+    
+    # PCA wants transposed gene expression matrix, namely samples x genes.
 
-pca_plot <- autoplot(pca_result, data = labelled_dataframe, colour = "Batch")
+    transposed_dataframe <- expression_dataframe_list[[current_manipulation]] %>%
+        inset(., "IQR", value = apply(., 1, IQR)) %>%
+        .[order(.$IQR, decreasing = T), ] %>%
+        .[1:5000, ] %>%
+        inset(., "IQR", value = NULL) %>%
+        t %>%
+        as.data.frame
 
-ggsave(filename = paste(output_graph_base_name, "pca_analysis", "pdf", sep = "."),
-       plot = pca_plot,
-       device = "pdf",
-       path = output_directory,
-       width = 170,
-       height = 170,
-       units = "mm")
-pca_plot
+    # Create another first column to act as batch factors for later grouping or labelling.
+    labelled_dataframe <- rownames_to_column(transposed_dataframe, var = "Batch") %>%
+        inset(., "Batch", value = as.factor(hash::values(grouping_hash, keys = .$Batch))) %>%
+        set_rownames(., value = rownames(transposed_dataframe))
+    
+    # The labelling/grouping column should be excluded in pca, but included in later plotting.
+    pca_result <- prcomp(labelled_dataframe[, -1], scale. = T)
+    
+    if (current_labelling == "unlabelled") {
+        pca_plot <- autoplot(pca_result, data = labelled_dataframe, colour = "Batch")
+    } else {
+        # Add labels to the data points
+        pca_plot <- autoplot(pca_result, data = labelled_dataframe, colour = "Batch") +
+            geom_text_repel(aes(label = rownames(labelled_dataframe)),
+                            size = 2, segment.size = 0.25, segment.alpha = 0.5)
+    }
+    
+    output_graph_name <- paste("batch_effect",
+                               "PCA",
+                               current_manipulation,
+                               current_labelling,
+                               "pdf",
+                               sep = ".")
+
+    ggsave(filename = output_graph_name,
+           plot = pca_plot,
+           device = "pdf",
+           path = pca_plot_output_directory,
+           width = 170,
+           height = 170,
+           units = "mm")
+    Sys.sleep(1)
+}
+```
+
+# Last iterated recombination data frame
+
+```{r}
+manipulation_label_grid_dataframe[i, ]
 ```
 
 # Perform PCA and plot using base graphics
@@ -197,14 +262,14 @@ plot.default(x$PC1,x$PC2,type="p",pch=c(21),
              cex.axis=1,cex.main=1,cex.lab=1,font.lab=2,font.axis=2)
 ```
 
-# draw 3D PCA using package rgl
+# Draw 3D PCA using package rgl
 
-```{r eval = FALSE, echo = FALSE}
+```{r eval = FALSE}
 plot3d(x$PC1,x$PC2,x$PC3,type="s",col=c("red","black")[labelled_dataframe$Batch],size=2)
 grid3d("x")
 grid3d("y+")
 grid3d("z")
-rgl.snapshot(file.path(output_directory, paste(output_graph_base_name, "3D_PCA", "png", sep = ".")))
+rgl.snapshot(file.path(pca_plot_output_directory, paste("batch_effect", "3D_PCA", "png", sep = ".")))
 ```
 
 ```{r}

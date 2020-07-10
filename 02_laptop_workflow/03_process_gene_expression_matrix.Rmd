@@ -124,7 +124,7 @@ temporary_expression_dataframe$max <- NULL
 temporary_expression_dataframe$IQR <-  NULL
 
 # Remove the outlier
-temporary_expression_dataframe[, "M238-CTRL-1hr"] <- NULL
+# temporary_expression_dataframe[, "M238-CTRL-1hr"] <- NULL
 
 filtered_expression_dataframe <- temporary_expression_dataframe
 ```
