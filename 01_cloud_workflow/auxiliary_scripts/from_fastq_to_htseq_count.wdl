@@ -189,7 +189,7 @@ task PicardMarkDuplicates {
     File input_bam
 
     command {
-        java -jar /usr/picard/picard.jar MarkDuplicates I=${input_bam} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_metrics.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
+        java -Xmx8g -jar /usr/picard/picard.jar MarkDuplicates I=${input_bam} O=${sample_name}.duplicates_removed.bam ASSUME_SORT_ORDER=coordinate METRICS_FILE=${sample_name}.duplicates_metrics.txt QUIET=true COMPRESSION_LEVEL=9 VALIDATION_STRINGENCY=LENIENT REMOVE_DUPLICATES=true
     }
 
     output {
@@ -200,7 +200,7 @@ task PicardMarkDuplicates {
     runtime {
         docker: "broadinstitute/picard:latest"
         disks: "local-disk 500 SSD"
-        memory: "13G"
+        memory: "16G"
         cpu: 2
     }
 }
