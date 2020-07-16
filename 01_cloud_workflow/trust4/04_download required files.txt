@@ -1,0 +1,13 @@
+# download files from Terra using Google Cloud SDK Shell.
+
+# local command to download
+cd D:\MyData\Git\TCR_integrated_project\Cell_2015_Willy\02_intermediate_files
+gsutil -m cp -r gs://fc-secure-51e81daf-509d-4292-a115-d67e41f01021/results/trust_clones_result_directory .
+
+
+
+# download the bam files from google bucket to lab server.
+gsutil -m cp -r -n gs://fc-2d4ee9d7-2826-4261-af45-a8419a5f5649/results/picard_mark_duplicates_result_directory .
+
+
+gsutil -m cp -r -n gs://fc-secure-51e81daf-509d-4292-a115-d67e41f01021/results/trust_clones_result_directory .

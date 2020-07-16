@@ -1,0 +1,1 @@
+{"MyBestWorkflow.sample_id":"${this.sample_id}","MyBestWorkflow.base_file_name":"${this.base_file_name}","MyBestWorkflow.fastq_r1":"${this.fastq_r1}","MyBestWorkflow.fastq_r2":"${this.fastq_r2}","MyBestWorkflow.trust_suffix":"${workspace.trust_suffix}","MyBestWorkflow.trust_clones_result_directory":"${workspace.trust_clones_result_directory}"}
