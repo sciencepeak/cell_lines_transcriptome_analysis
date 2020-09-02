@@ -24,6 +24,8 @@ ptm <- proc.time()
 options(stringsAsFactors = F)
 library("R.utils")
 library("magrittr")
+library("dplyr")
+library("tibble")
 ```
 
 # Set up input files, directories, and parameters
@@ -83,9 +85,7 @@ cleaned_expression_dataframe <- raw_expression_dataframe %>%
 # Later on, the duplicated hgnc symbols will be selected based on the expression median values.
 cleaned_expression_dataframe$expression_median <- apply(cleaned_expression_dataframe[, -1], 1, median)
 
-
-head(cleaned_expression_dataframe)
-
+cleaned_expression_dataframe
 ```
 
 # Load the Ensembl gene id and hgnc symbol conversion table.
@@ -129,10 +129,10 @@ For two duplicated hgnc symbols, the symbols with larger expression median value
 ```{r remove-duplicated-hgnc-symbols}
 final_expression_dataframe <- merged_expression_dataframe %>%
     by(., .$hgnc_symbol, function(df_x) df_x[which.max(df_x$expression_median), ]) %>%
-    do.call(rbind, .) %>%
-    inset(., c("ensembl_gene_id", "expression_median", "hgnc_symbol"), value = c(NULL, NULL, NULL))
-
-head(final_expression_dataframe)
+    bind_rows %>%
+    inset(., c("ensembl_gene_id", "expression_median"), value = c(NULL, NULL)) %>%
+    column_to_rownames(., var = "hgnc_symbol")
+final_expression_dataframe
 ```
 
 # Write combined expression matrix to the hard disk and move the expression matrix to a proper folder

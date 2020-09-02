@@ -173,7 +173,7 @@ for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
            units = "mm")
     Sys.sleep(1)
 }
-
+final_boxplot
 ```
 
 
@@ -185,7 +185,12 @@ https://cran.r-project.org/web/packages/ggfortify/vignettes/plot_pca.html
 
 https://cran.r-project.org/web/packages/ggrepel/vignettes/ggrepel.html#options
 
-sort by IQR, because we are more interested in higher variance genes. choose the top 5000 genes based on IQR. 
+sort by IQR, because we are more interested in higher variance genes. choose the top 5000 genes based on IQR.
+
+```{r}
+manipulation_label_grid_dataframe
+```
+
 
 ```{r}
 for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
@@ -236,6 +241,7 @@ for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
            units = "mm")
     Sys.sleep(1)
 }
+pca_plot
 ```
 
 # Last iterated recombination data frame
