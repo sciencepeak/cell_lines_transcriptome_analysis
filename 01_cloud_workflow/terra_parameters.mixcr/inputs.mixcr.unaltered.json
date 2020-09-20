@@ -1,1 +1,0 @@
-{"MyBestWorkflow.sample_id":"${this.sample_id}","MyBestWorkflow.base_file_name":"${this.base_file_name}","MyBestWorkflow.fastq_r1":"${this.fastq_r1}","MyBestWorkflow.fastq_r2":"${this.fastq_r2}","MyBestWorkflow.mixcr_clones_result_directory":"${workspace.mixcr_clones_result_directory}","MyBestWorkflow.mixcr_suffix":"${workspace.mixcr_suffix}"}

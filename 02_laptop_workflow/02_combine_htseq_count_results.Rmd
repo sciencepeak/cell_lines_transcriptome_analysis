@@ -129,6 +129,7 @@ For two duplicated hgnc symbols, the symbols with larger expression median value
 ```{r remove-duplicated-hgnc-symbols}
 final_expression_dataframe <- merged_expression_dataframe %>%
     by(., .$hgnc_symbol, function(df_x) df_x[which.max(df_x$expression_median), ]) %>%
+    unclass %>%
     bind_rows %>%
     inset(., c("ensembl_gene_id", "expression_median"), value = c(NULL, NULL)) %>%
     column_to_rownames(., var = "hgnc_symbol")
