@@ -37,7 +37,7 @@ library("readxl")
 
 ```{r}
 grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
-expression_path <- file.path(".", "intermediate_files", "htseq_count_expression_matrix.csv.bz2")
+expression_path <- file.path(".", "intermediate_files", "expr_mat.raw_count.csv.bz2")
 
 output_directory <- file.path(".", "intermediate_files")
 ```

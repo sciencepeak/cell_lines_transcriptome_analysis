@@ -36,10 +36,10 @@ library("rgl")
 ```{r}
 grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
 
-raw_count_path <- file.path(".", "intermediate_files", "expression_matrix.raw_count.csv.bz2")
-log2_cpm_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.csv.bz2")
-log2_cpm_BE_removed_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.csv.bz2")
-log2_cpm_BE_removed_filtered_path <- file.path(".", "intermediate_files", "expression_matrix.log2_cpm.BE_removed.filtered.csv.bz2")
+raw_count_path <- file.path(".", "intermediate_files", "expr_mat.raw_count.csv.bz2")
+log2_cpm_path <- file.path(".", "intermediate_files", "expr_mat.log2_cpm.csv.bz2")
+log2_cpm_BE_adj_path <- file.path(".", "intermediate_files", "expr_mat.log2_cpm.BE_adj.csv.bz2")
+log2_cpm_BE_adj_filtered_path <- file.path(".", "intermediate_files", "expr_mat.log2_cpm.BE_adj.filtered.csv.bz2")
 
 box_plot_output_directory <- file.path(".", "intermediate_files", "batch_effect_box_plots") %T>%
     dir.create(., showWarnings = F, recursive = T)
@@ -51,7 +51,7 @@ pca_plot_output_directory <- file.path(".", "intermediate_files", "batch_effect_
 # Combine the possible conditions that will be plotted.
 
 ```{r}
-manipulation_genres <- c("raw_count", "log2_cpm", "log2_cpm.BE_removed", "log2_cpm.BE_removed.filtered")
+manipulation_genres <- c("raw_count", "log2_cpm", "log2_cpm.BE_adj", "log2_cpm.BE_adj.filtered")
 label_genres <- c("labelled", "unlabelled")
 manipulation_label_grid_dataframe <- expand.grid(manipulation = manipulation_genres, label = label_genres)
 manipulation_label_grid_dataframe
@@ -60,7 +60,7 @@ manipulation_label_grid_dataframe
 # Read the files from hard disk.
 
 ```{r}
-expression_dataframe_list <- c(raw_count_path, log2_cpm_path, log2_cpm_BE_removed_path, log2_cpm_BE_removed_filtered_path) %>%
+expression_dataframe_list <- c(raw_count_path, log2_cpm_path, log2_cpm_BE_adj_path, log2_cpm_BE_adj_filtered_path) %>%
     set_names(., value = manipulation_genres) %>%
     lapply(., read.csv, row.names = 1, check.names = F)
 
@@ -116,11 +116,11 @@ raw_count_long_dataframe <-
 log2_cpm_long_dataframe <-
     get_long_dataframe(expression_dataframe_list[["log2_cpm"]], grouping_dataframe, median)
 
-log2_cpm_BE_removed_long_dataframe <-
-    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_removed"]], grouping_dataframe, median)
+log2_cpm_BE_adj_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_adj"]], grouping_dataframe, median)
 
-log2_cpm_BE_removed_filtered_long_dataframe <-
-    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_removed.filtered"]], grouping_dataframe, median)
+log2_cpm_BE_adj_filtered_long_dataframe <-
+    get_long_dataframe(expression_dataframe_list[["log2_cpm.BE_adj.filtered"]], grouping_dataframe, median)
 ```
 
 # Plot jitter box plots to see the batch affect.
@@ -128,8 +128,8 @@ log2_cpm_BE_removed_filtered_long_dataframe <-
 ```{r}
 plot_dataframe_list <- list(raw_count.colsums = raw_count_long_dataframe,
                             log2_cpm.medians = log2_cpm_long_dataframe,
-                            log2_cpm.BE_removed.medians = log2_cpm_BE_removed_long_dataframe,
-                            log2_cpm.BE_removed.filtered.medians = log2_cpm_BE_removed_filtered_long_dataframe)
+                            log2_cpm.BE_adj.medians = log2_cpm_BE_adj_long_dataframe,
+                            log2_cpm.BE_adj.filtered.medians = log2_cpm_BE_adj_filtered_long_dataframe)
 my_comparisons <- list(c("batch_1", "batch_2"))
 
 for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {

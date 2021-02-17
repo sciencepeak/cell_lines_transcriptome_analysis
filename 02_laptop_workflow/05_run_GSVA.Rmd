@@ -75,7 +75,7 @@ Click on the link of the gene sets below to download the current version of gene
 
 ```{r}
 # Inputs
-compression_file_path <- file.path(getwd(), "intermediate_files", "expression_matrix.log2_cpm.BE_removed.filtered.csv.bz2")
+compression_file_path <- file.path(getwd(), "intermediate_files", "expr_mat.log2_cpm.BE_adj.filtered.csv.bz2")
 
 gene_sets_input_directory <- file.path(getwd(), "MSigDB_gene_sets") %T>%
     dir.create(., showWarnings = F, recursive = T)

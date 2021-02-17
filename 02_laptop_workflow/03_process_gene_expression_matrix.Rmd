@@ -35,14 +35,18 @@ round_digit <- 3 # round the dataframe
 
 ```{r}
 grouping_path <- file.path("..", "01_cloud_workflow", "metadata", "samples_cell_lines_batch_both_SampleGroup.xlsx")
-expression_path <- file.path(".", "intermediate_files", "expression_matrix.raw_count.csv.bz2")
+expression_path <- file.path(".", "intermediate_files", "expr_mat.raw_count.csv.bz2")
 
 output_directory <- file.path(".", "intermediate_files")
 
-output_csv_names <- c("expression_matrix.log2_cpm.csv",
-                      "expression_matrix.log2_cpm.BE_removed.csv",
-                      "expression_matrix.log2_cpm.BE_removed.filtered.csv")
-names(output_csv_names) <- c("log2_cpm", "log2_cpm.BE_removed", "log2_cpm.BE_removed.filtered")
+output_csv_names <- c("expr_mat.log2_cpm.csv",
+                      "expr_mat.log2_cpm.BE_adj.csv",
+                      "expr_mat.log2_cpm.BE_adj.filtered.csv",
+                      "expr_mat.log2_cpm.BE_adj.filtered.non_IQR_max.csv")
+names(output_csv_names) <- c("log2_cpm",
+                             "log2_cpm.BE_adj",
+                             "log2_cpm.BE_adj.filtered",
+                             "log2_cpm.BE_adj.filtered.non_IQR_max")
 ```
 
 # Read the files from hard disk.
@@ -134,7 +138,8 @@ filtered_expression_dataframe <- temporary_expression_dataframe
 ```{r}
 output_dataframe_list <- list(normalized_expression_dataframe,
                               batch_effect_removed_dataframe,
-                              filtered_expression_dataframe) %>%
+                              filtered_expression_dataframe,
+                              corrected_expression_dataframe) %>%
     set_names(., value = names(output_csv_names)) %>%
     lapply(., round, digits = round_digit)
 

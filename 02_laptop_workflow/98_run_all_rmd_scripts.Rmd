@@ -1,0 +1,57 @@
+---
+title: "A good title to conceive"
+author: "Author: Old Vegetable Bird"
+date: "`r format(Sys.time(), '%F')`"
+output:
+    rmarkdown::html_document:
+        theme: readable
+        highlight: textmate
+        df_print: paged
+---
+
+```{r message=FALSE, warning=FALSE}
+rm(list = ls())
+ptm <- proc.time()
+# proc.time() - ptm
+options(stringsAsFactors = F)
+library("fs")
+library("rmarkdown")
+library("magrittr")
+```
+
+# Remove existing result files.
+
+```{r}
+intermediate_files <- file.path(getwd(), "intermediate_files") %T>%
+    dir.create(., showWarnings = F, recursive = T)
+
+unlink(file.path(intermediate_files, "*"), recursive = T)
+```
+
+# List all the rmd scripts.
+
+```{r}
+serial_scripts <- dir_ls(".", glob = "*.Rmd") %>%
+    .[-length(.)]
+serial_scripts
+```
+
+# Run all rmd scripts.
+
+```{r}
+for (i in serial_scripts) {
+    rmarkdown::render(i)
+}
+```
+
+https://www.datanovia.com/en/blog/how-to-easily-manipulate-files-and-directories-in-r/
+
+```{r}
+dir_ls(".", glob = "*.html") %>%
+    file_delete
+```
+
+```{r}
+proc.time() - ptm
+```
+

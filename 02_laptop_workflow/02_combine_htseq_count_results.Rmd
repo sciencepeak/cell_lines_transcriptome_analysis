@@ -53,7 +53,7 @@ output_directory <- file.path(getwd(), "intermediate_files") %T>%
     dir.create(., showWarnings = F, recursive = T)
 
 # We can compress the output text file to save hard disk space.
-output_csv_file_name <- "expression_matrix.raw_count.csv"
+output_csv_file_name <- "expr_mat.raw_count.csv"
 ```
 
 # Merge gene expression values per sample per file into a gene expression matrix.
