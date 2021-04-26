@@ -28,6 +28,12 @@ ptm <- proc.time()
 # proc.time() - ptm
 options(stringsAsFactors = F)
 library("magrittr")
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# 
+# BiocManager::install("DESeq2")
+
 library("DESeq2")
 library("readxl")
 ```

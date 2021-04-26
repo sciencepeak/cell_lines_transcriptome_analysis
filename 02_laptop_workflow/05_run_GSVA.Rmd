@@ -30,6 +30,7 @@ options(stringsAsFactors = F)
 library("magrittr")
 library("stringr")
 library("tidyr")
+options(connectionObserver = NULL) # in order to load org.Hs.eg.db correctly in Rstudio.
 library("GSVA")
 library("GSVAdata")
 library("edgeR")

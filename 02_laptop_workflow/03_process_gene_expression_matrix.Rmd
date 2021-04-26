@@ -106,31 +106,36 @@ corrected_expression_dataframe <- batch_effect_removed_dataframe %>%
     .[remaining_genes, , drop = F]
 ```
 
+
 # Filtered out genes that has low variability or max expression value.
 
-compute IQR, max value
+compute IQR, max value, apply filters to the normalized and logarithmized gene expression dataframe
 
 ```{r}
 temporary_expression_dataframe <- corrected_expression_dataframe
 
-temporary_expression_dataframe$IQR <- apply(corrected_expression_dataframe, 1, IQR)
-temporary_expression_dataframe$max <- apply(corrected_expression_dataframe, 1, max)
+# Calculate the Interquartile Range (IQR), which is used to remove outliers.
+IQR_vector <- apply(temporary_expression_dataframe, 1, IQR)
 
-#sort by IQR, because we are more interested in higher variance genes
-temporary_expression_dataframe <- temporary_expression_dataframe %>%
-    .[order(.$IQR, decreasing = T), ]
+# find out the max expression value among samples for each gene.
+max_expression_vector <- apply(temporary_expression_dataframe, 1, max)
 
-## remove gene with log2 CPM < 0, and also choose those with IQR >= 1
-temporary_expression_dataframe <- temporary_expression_dataframe[temporary_expression_dataframe$max >= 0, ]
-temporary_expression_dataframe <- temporary_expression_dataframe[temporary_expression_dataframe$IQR >= 1, ]
+# Apply some filters to the expression matrix.
+# Ensure the expression of a gene has enough variation among samples.
+# The variation is that the Interquartile Range (IQR) values must be greater than a threshold.
+# The threshold for unlogarithmized CPM is 2.
+# The threshold for base-2 logarithmized CPM is 1.
 
-temporary_expression_dataframe$max <- NULL
-temporary_expression_dataframe$IQR <-  NULL
+# Ensure the expression of a gene can not be too small,
+# So the gene expression should surpass the threshold.
+# The threshold for unlogarithmized CPM is 1.
+# The threshold for base-2 logarithmized CPM is 0.
 
-# Remove the outlier
-# temporary_expression_dataframe[, "M238-CTRL-1hr"] <- NULL
+desired_row_index <- IQR_vector >= 1 & max_expression_vector >= 0
+threshold_temporary_expression_dataframe <- temporary_expression_dataframe[desired_row_index, ]
+threshold_temporary_expression_dataframe
 
-filtered_expression_dataframe <- temporary_expression_dataframe
+filtered_expression_dataframe <- threshold_temporary_expression_dataframe
 ```
 
 # Output three gene expression dataframes.
