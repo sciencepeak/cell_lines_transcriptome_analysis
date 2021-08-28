@@ -61,7 +61,7 @@ manipulation_label_grid_dataframe
 
 ```{r}
 expression_dataframe_list <- c(raw_count_path, log2_cpm_path, log2_cpm_BE_adj_path, log2_cpm_BE_adj_filtered_path) %>%
-    set_names(., value = manipulation_genres) %>%
+    setNames(., manipulation_genres) %>%
     lapply(., read.csv, row.names = 1, check.names = F)
 
 grouping_dataframe <- read_excel(grouping_path)
@@ -164,14 +164,14 @@ for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
             theme(legend.position = "none")
     }
     
-    ggsave(filename = paste("batch_effect", current_manipulation, current_labelling, "pdf", sep = "."),
+    ggsave(filename = paste("batch_effect", current_labelling, current_manipulation, "pdf", sep = "."),
            plot = final_boxplot,
            device = "pdf",
            path = box_plot_output_directory,
            width = 170,
            height = 170,
            units = "mm")
-    Sys.sleep(1)
+    # Sys.sleep(1)
 }
 final_boxplot
 ```
@@ -227,8 +227,8 @@ for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
     
     output_graph_name <- paste("batch_effect",
                                "PCA",
-                               current_manipulation,
                                current_labelling,
+                               current_manipulation,
                                "pdf",
                                sep = ".")
 
@@ -239,7 +239,7 @@ for(i in seq_len(nrow(manipulation_label_grid_dataframe))) {
            width = 170,
            height = 170,
            units = "mm")
-    Sys.sleep(1)
+    # Sys.sleep(1)
 }
 pca_plot
 ```

@@ -34,6 +34,8 @@ options(connectionObserver = NULL) # in order to load org.Hs.eg.db correctly in 
 library("GSVA")
 library("GSVAdata")
 library("edgeR")
+library("dplyr")
+library("purrr")
 library("R.utils")
 library("tibble")
 ```
@@ -95,6 +97,7 @@ gsva_input_preference <- c("log2_cpm", "raw_count")[1]
 whether_normalized <- TRUE
 whether_logarithmized <- TRUE
 round_digit <- 3 # round the final dataframe
+prior_count <- 2
 ```
 
 
@@ -158,12 +161,15 @@ if (whether_normalized == FALSE & whether_logarithmized == FALSE) {
     # The cpm function is provided in edgeR package.
     # https://www.rdocumentation.org/packages/edgeR/versions/3.14.0/topics/cpm
     normalized_expression_dataframe <- expression_dataframe %>%
-        cpm(., log = T, prior.count = 0.01) %>%
-        as.data.frame
+        DGEList(counts = .) %>%
+        calcNormFactors(., method = "TMM") %>%
+        cpm(., normalized.lib.sizes = TRUE, prior.count = prior_count, log = TRUE) %>%
+        as.data.frame %>%
+        mutate(., across(where(is.numeric), ~ round(.x, digits = round_digit)))
 }
 
 if (whether_normalized == TRUE & whether_logarithmized == FALSE) {
-    normalized_expression_dataframe <- log2(expression_dataframe + 0.01)
+    normalized_expression_dataframe <- log2(expression_dataframe + 2)
 }
 
 if (whether_normalized == TRUE & whether_logarithmized == TRUE) {
@@ -178,39 +184,46 @@ if (whether_normalized == FALSE & whether_logarithmized == TRUE) {
 # Apply filters to the normalized and logarithmized gene expression dataframe
 
 ```{r}
-# Calculate the Interquartile Range (IQR), which is used to remove outliers.
-normalized_expression_dataframe$IQR <- apply(normalized_expression_dataframe, 1, IQR)
+filter_by_IQR_and_max <- function(temporary_expression_dataframe) {
+    
+    # temporary_expression_dataframe <- corrected_expression_dataframe
 
-# find out the max expression value among samples for each gene.
-normalized_expression_dataframe$max_expression <- apply(normalized_expression_dataframe, 1, max)
+    # Calculate the Interquartile Range (IQR), which is used to remove outliers.
+    IQR_vector <- apply(temporary_expression_dataframe, 1, IQR)
+    
+    # find out the max expression value among samples for each gene.
+    max_expression_vector <- apply(temporary_expression_dataframe, 1, max)
+    
+    # Apply some filters to the expression matrix.
+    # Ensure the expression of a gene has enough variation among samples.
+    # The variation is that the Interquartile Range (IQR) values must be greater than a threshold.
+    # The threshold for unlogarithmized CPM is 2.
+    # The threshold for base-2 logarithmized CPM is 1.
+    
+    # Ensure the expression of a gene can not be too small,
+    # So the gene expression should surpass the threshold.
+    # The threshold for unlogarithmized CPM is 1.
+    # The threshold for base-2 logarithmized CPM is 0.
+    
+    desired_row_index <- IQR_vector >= 1 & max_expression_vector >= 0
+    
+    threshold_temporary_expression_dataframe <- temporary_expression_dataframe[desired_row_index, ]
+    
+    threshold_temporary_expression_dataframe
+}
 
-# Apply some filters to the expression matrix.
-
-# Ensure the expression of a gene has enough variation among samples.
-# The variation is that the Interquartile Range (IQR) values must be greater than a threshold.
-# The threshold for unlogarithmized CPM is 2.
-# The threshold for base-2 logarithmized CPM is 1.
-normalized_expression_dataframe <- normalized_expression_dataframe[normalized_expression_dataframe$IQR >= 1, ]
-
-# Ensure the expression of a gene can not be too small,
-# So the gene expression should surpass the threshold.
-# The threshold for unlogarithmized CPM is 1.
-# The threshold for base-2 logarithmized CPM is 0.
-normalized_expression_dataframe <- normalized_expression_dataframe[normalized_expression_dataframe$max_expression >= 0, ]
-
-normalized_expression_dataframe$IQR <- NULL
-normalized_expression_dataframe$max_expression <- NULL
+threshold_normalized_expression_dataframe <- filter_by_IQR_and_max(normalized_expression_dataframe)
 ```
 
 # We have two kinds of filtered gene expression dataframe to proceed
 
 ```{r}
 # The above filters can only be used on the normalized and logarithmized expression dataframe.
-# After fitler application, the raw count expression dataframe is still preferred by the GSVA package.
-filtered_raw_count_expression_dataframe <- expression_dataframe[rownames(normalized_expression_dataframe), ]
+# After filter application, the raw count expression dataframe is still preferred by the GSVA package.
+filtered_raw_count_expression_dataframe <- expression_dataframe[rownames(threshold_normalized_expression_dataframe), ]
 
 # But we still have the filtered normalized logarithmized gene expression dataframe
-filtered_log2_cpm_expression_dataframe <- normalized_expression_dataframe
+filtered_log2_cpm_expression_dataframe <- threshold_normalized_expression_dataframe
 ```
 
 ***
@@ -253,19 +266,27 @@ for(i_name in names(accumulation_list)) {
 }
 
 final_combined_dataframe <- do.call(rbind, signature_list)
+```
 
-write.csv(final_combined_dataframe,
+```{r}
+cleaned_combined_dataframe <- final_combined_dataframe %>%
+    magrittr::set_rownames(., value = NULL) %>%
+    mutate(., gene_set = str_replace_all(string = gene_set, pattern = "\\.", replacement = "@")) %>%
+    unite(., col = "signature_set_gene_set", signature_set, gene_set, sep = "--") %>%
+    column_to_rownames(., var = "signature_set_gene_set")
+cleaned_combined_dataframe
+```
+
+```{r}
+write.csv(cleaned_combined_dataframe,
           file = output_file,
-          row.names = F, quote = F)
+          row.names = T, quote = F)
 
 output_compressed_file_name <- bzip2(output_file, compression = 9, overwrite = T)[1]
 
 file.rename(from = output_compressed_file_name,
                 to = file.path(output_directory, output_compressed_file_name))
-
 ```
-
-
 
 # how to analyze gsva result?
 

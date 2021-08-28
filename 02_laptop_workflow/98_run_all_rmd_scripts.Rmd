@@ -40,7 +40,7 @@ serial_scripts
 
 ```{r}
 for (i in serial_scripts) {
-    rmarkdown::render(i)
+    rmarkdown::render(i, quiet = T)
 }
 ```
 
